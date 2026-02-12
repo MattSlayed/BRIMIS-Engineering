@@ -24,7 +24,12 @@ Public Sub ApplyBrandingToSheet(ws As Worksheet)
     Application.ScreenUpdating = False
 
     ' Apply header row styling (row 1 = sheet title/branding bar)
-    With ws.Range("A1:Z1")
+    ' Use the merged area of A1 to handle different merge widths per sheet
+    ' (Dashboard=A1:Z1, Incident Log=A1:AA1, Settings=A1:H1)
+    Dim rngHeader As Range
+    Set rngHeader = ws.Range("A1").MergeArea
+
+    With rngHeader
         .Interior.Color = CLR_BRIMIS_DARK
         .Font.Color = CLR_BRIMIS_WHITE
         .Font.Name = "Calibri"
