@@ -85,10 +85,10 @@ def create_workbook():
     _setup_incident_log(ws_incident_log)
 
     # =========================================================================
-    # 5. Save as .xlsm (macro-enabled workbook)
+    # 5. Save as .xlsx (VBA will be injected in Plan 03 to produce .xlsm)
     # =========================================================================
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    output_path = os.path.join(project_root, "BRIMIS_IMS.xlsm")
+    output_path = os.path.join(project_root, "BRIMIS_IMS.xlsx")
     wb.save(output_path)
     print(f"Workbook saved to: {output_path}")
     print(f"File size: {os.path.getsize(output_path):,} bytes")
@@ -367,3 +367,4 @@ if __name__ == "__main__":
     print(f"  Sheets: Dashboard, Incident Log, Settings")
     print(f"  Tables: tblTeams, tblPersonnel, tblCategories, tblSLAThresholds, tblPriorityMatrix, tblIncidents")
     print(f"  Output: {output}")
+    print(f"  Note: Saved as .xlsx -- VBA injection (Plan 03) will convert to .xlsm")
