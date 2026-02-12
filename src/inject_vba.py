@@ -85,7 +85,11 @@ def remove_existing_module(vb_project, module_name):
 
 
 def import_standard_module(vb_project, bas_file):
-    """Import a standard .bas module into the VBA project."""
+    """Import a standard .bas module into the VBA project using AddFromString.
+
+    Uses AddFromString instead of Import to avoid VBA auto-renaming modules
+    when Attribute VB_Name conflicts with an existing module name.
+    """
     module_name = os.path.splitext(bas_file)[0]
     full_path = os.path.join(VBA_MODULES_DIR, bas_file)
 
@@ -95,10 +99,23 @@ def import_standard_module(vb_project, bas_file):
 
     # Remove existing module with same name (if any)
     remove_existing_module(vb_project, module_name)
+    # Also remove any auto-renamed duplicates (e.g., modConstants1)
+    remove_existing_module(vb_project, module_name + "1")
 
-    # Import the .bas file
-    vb_project.VBComponents.Import(full_path)
-    print(f"  Imported: {bas_file} -> {module_name}")
+    # Read the .bas file and strip Attribute lines
+    with open(full_path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    code_lines = [line for line in lines if not line.strip().startswith("Attribute ")]
+    code_content = "".join(code_lines)
+
+    # Create a new empty module with the correct name
+    new_module = vb_project.VBComponents.Add(1)  # 1 = vbext_ct_StdModule
+    new_module.Name = module_name
+
+    # Add code to the module
+    new_module.CodeModule.AddFromString(code_content)
+    print(f"  Created: {bas_file} -> {module_name}")
     return True
 
 
