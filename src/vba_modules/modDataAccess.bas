@@ -3,8 +3,8 @@ Option Explicit
 
 ' ============================================================================
 ' Module:  modDataAccess
-' Purpose: Central data access layer for the tblIncidents table.
-'          All incident CRUD operations go through this module.
+' Purpose: Central data access layer for tblIncidents and tblRCALog tables.
+'          All incident and RCA CRUD operations go through this module.
 '          Sheet/table names are resolved once via GetIncidentTable();
 '          individual procedures use only the returned ListObject reference
 '          and column-name constants from modConstants.
@@ -452,4 +452,164 @@ ErrHandler:
     modErrorHandler.HandleError "modDataAccess", "GetIncidentRowIndex", _
                                  Err.Number, Err.Description
     GetIncidentRowIndex = 0
+End Function
+
+' ============================================================================
+' RCA Log Data Access Functions
+' ============================================================================
+
+' ----------------------------------------------------------------------------
+' GetRCATable
+' Returns the tblRCALog ListObject from the RCA Log sheet.
+' This is the ONLY function that references the RCA Log sheet/table names.
+'
+' Returns:
+'   ListObject reference to tblRCALog, or Nothing on error
+' ----------------------------------------------------------------------------
+Private Function GetRCATable() As ListObject
+    On Error GoTo ErrHandler
+
+    Set GetRCATable = ThisWorkbook.Sheets(SHT_RCA_LOG).ListObjects(TBL_RCA_LOG)
+    Exit Function
+
+ErrHandler:
+    modErrorHandler.HandleError "modDataAccess", "GetRCATable", _
+                                 Err.Number, Err.Description
+    Set GetRCATable = Nothing
+End Function
+
+' ----------------------------------------------------------------------------
+' GetNextRCAID
+' Generates the next sequential RCA ID in the format RCA-NNNNN.
+' Scans all existing IDs, finds the maximum numeric portion, and returns
+' the next value (zero-padded to 5 digits).
+'
+' Returns:
+'   Next RCA ID string (e.g., "RCA-00001" for an empty table)
+' ----------------------------------------------------------------------------
+Public Function GetNextRCAID() As String
+    On Error GoTo ErrHandler
+
+    Dim tbl As ListObject
+    Set tbl = GetRCATable()
+    If tbl Is Nothing Then
+        GetNextRCAID = RCA_ID_PREFIX & Format(1, "00000")
+        Exit Function
+    End If
+
+    ' Empty table -- first RCA record
+    If tbl.ListRows.Count = 0 Then
+        GetNextRCAID = RCA_ID_PREFIX & Format(1, "00000")
+        Exit Function
+    End If
+
+    Dim idCol As Long
+    idCol = ColIdx(tbl, COL_RCA_ID)
+    If idCol = 0 Then
+        GetNextRCAID = RCA_ID_PREFIX & Format(1, "00000")
+        Exit Function
+    End If
+
+    ' Scan all rows for the maximum numeric portion
+    Dim maxNum As Long
+    maxNum = 0
+
+    Dim i As Long
+    Dim sVal As String
+    Dim sNumPart As String
+    Dim lNum As Long
+
+    For i = 1 To tbl.ListRows.Count
+        sVal = CStr(tbl.ListRows(i).Range(1, idCol).Value)
+
+        ' Extract numeric portion after the prefix
+        If Left(sVal, Len(RCA_ID_PREFIX)) = RCA_ID_PREFIX Then
+            sNumPart = Mid(sVal, Len(RCA_ID_PREFIX) + 1)
+
+            ' Validate that the remainder is numeric
+            If IsNumeric(sNumPart) Then
+                lNum = CLng(sNumPart)
+                If lNum > maxNum Then
+                    maxNum = lNum
+                End If
+            End If
+        End If
+    Next i
+
+    GetNextRCAID = RCA_ID_PREFIX & Format(maxNum + 1, "00000")
+    Exit Function
+
+ErrHandler:
+    modErrorHandler.HandleError "modDataAccess", "GetNextRCAID", _
+                                 Err.Number, Err.Description
+    ' Fallback -- return first ID
+    GetNextRCAID = RCA_ID_PREFIX & Format(1, "00000")
+End Function
+
+' ----------------------------------------------------------------------------
+' WriteRCARecord
+' Adds a new RCA record to tblRCALog. Always inserts a new row (never updates),
+' so re-resolving an incident creates a new RCA record preserving history.
+'
+' Parameters:
+'   sIncidentID      - The parent incident ID (e.g., "INC-00001")
+'   sTitle           - The incident title (denormalized for readability)
+'   sRootCause       - Root cause description (required by caller)
+'   sCorrectiveAction - Corrective action taken (optional, may be empty)
+'   sPreventiveAction - Preventive action planned (optional, may be empty)
+'   sResolutionNotes  - Additional resolution notes (optional, may be empty)
+'
+' Returns:
+'   True on success, False on failure
+' ----------------------------------------------------------------------------
+Public Function WriteRCARecord(ByVal sIncidentID As String, _
+                                ByVal sTitle As String, _
+                                ByVal sRootCause As String, _
+                                ByVal sCorrectiveAction As String, _
+                                ByVal sPreventiveAction As String, _
+                                ByVal sResolutionNotes As String) As Boolean
+    On Error GoTo ErrHandler
+
+    Dim tbl As ListObject
+    Set tbl = GetRCATable()
+    If tbl Is Nothing Then
+        WriteRCARecord = False
+        Exit Function
+    End If
+
+    modUtilities.UnprotectSheet tbl.Parent
+
+    Dim newRow As ListRow
+    Set newRow = tbl.ListRows.Add
+
+    ' Generate RCA ID
+    Dim sRCAID As String
+    sRCAID = GetNextRCAID()
+
+    newRow.Range(1, ColIdx(tbl, COL_RCA_ID)).Value = sRCAID
+    newRow.Range(1, ColIdx(tbl, COL_RCA_INCIDENT_ID)).Value = sIncidentID
+    newRow.Range(1, ColIdx(tbl, COL_RCA_INCIDENT_TITLE)).Value = sTitle
+    newRow.Range(1, ColIdx(tbl, COL_RCA_ROOT_CAUSE)).Value = sRootCause
+    newRow.Range(1, ColIdx(tbl, COL_RCA_CORRECTIVE_ACTION)).Value = sCorrectiveAction
+    newRow.Range(1, ColIdx(tbl, COL_RCA_PREVENTIVE_ACTION)).Value = sPreventiveAction
+    newRow.Range(1, ColIdx(tbl, COL_RCA_RESOLUTION_NOTES)).Value = sResolutionNotes
+    newRow.Range(1, ColIdx(tbl, COL_RCA_RESOLVED_BY)).Value = Application.UserName
+    newRow.Range(1, ColIdx(tbl, COL_RCA_RESOLVED_DATE)).Value = Now
+    newRow.Range(1, ColIdx(tbl, COL_RCA_LAST_MODIFIED)).Value = Now
+
+    modUtilities.ProtectSheet tbl.Parent
+
+    WriteRCARecord = True
+    Exit Function
+
+ErrHandler:
+    On Error Resume Next
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Sheets(SHT_RCA_LOG)
+    modUtilities.ProtectSheet ws
+    On Error GoTo 0
+
+    modErrorHandler.HandleError "modDataAccess", "WriteRCARecord", _
+                                 Err.Number, Err.Description
+    WriteRCARecord = False
 End Function

@@ -25,6 +25,24 @@ Public Const TBL_PRIORITY_MATRIX As String = "tblPriorityMatrix"
 Public Const SHT_ASSIGNMENT_TRACKER As String = "Assignment Tracker"
 Public Const TBL_ASSIGNMENT_TRACKER As String = "tblAssignmentTracker"
 
+' === RCA Log ===
+Public Const SHT_RCA_LOG As String = "RCA Log"
+Public Const TBL_RCA_LOG As String = "tblRCALog"
+
+' === RCA Log Column Names ===
+Public Const COL_RCA_ID As String = "RCAID"
+Public Const COL_RCA_INCIDENT_ID As String = "IncidentID"
+Public Const COL_RCA_INCIDENT_TITLE As String = "IncidentTitle"
+Public Const COL_RCA_ROOT_CAUSE As String = "RootCause"
+Public Const COL_RCA_CORRECTIVE_ACTION As String = "CorrectiveAction"
+Public Const COL_RCA_PREVENTIVE_ACTION As String = "PreventiveAction"
+Public Const COL_RCA_RESOLUTION_NOTES As String = "ResolutionNotes"
+Public Const COL_RCA_RESOLVED_BY As String = "ResolvedBy"
+Public Const COL_RCA_RESOLVED_DATE As String = "ResolvedDate"
+Public Const COL_RCA_LAST_MODIFIED As String = "LastModified"
+
+Public Const RCA_ID_PREFIX As String = "RCA-"
+
 ' === Incident Log Column Names (27 columns) ===
 Public Const COL_INCIDENT_ID As String = "IncidentID"
 Public Const COL_TITLE As String = "Title"
