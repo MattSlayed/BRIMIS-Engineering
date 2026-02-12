@@ -5,14 +5,17 @@ Option Explicit
 ' Purpose: Single-page form for updating incident status through the enforced
 '          lifecycle state machine. Shows non-terminal incidents, presents only
 '          valid next statuses, conditionally shows reason field for Cancelled
-'          and Duplicate transitions.
+'          and Duplicate transitions, and conditionally shows RCA fields for
+'          Resolved transitions with dual-write to tblIncidents and tblRCALog.
 '
 ' Control Names: lstIncidents, lblCurrentStatus, lblCurrentAssignee,
 '   lblCurrentDate, cboNewStatus, lblReason, txtReason,
+'   lblRootCause, txtRootCause, lblCorrectiveAction, txtCorrectiveAction,
+'   lblPreventiveAction, txtPreventiveAction, lblResolutionNotes, txtResolutionNotes,
 '   btnUpdateStatus, btnCancel
 '
 ' Dependencies: modConstants (SHT_*, TBL_*, COL_*, STATUS_*, APP_TITLE)
-'               modDataAccess (UpdateIncidentFields)
+'               modDataAccess (UpdateIncidentFields, WriteRCARecord)
 '               modAssignment (GetValidNextStatuses, GetTimestampColumn,
 '                              RefreshAssignmentTracker)
 '               modErrorHandler (HandleError)
@@ -20,7 +23,8 @@ Option Explicit
 
 ' ----------------------------------------------------------------------------
 ' UserForm_Initialize
-' Populates lstIncidents with all non-terminal incidents. Hides reason field.
+' Populates lstIncidents with all non-terminal incidents. Hides reason field
+' and RCA fields.
 ' ----------------------------------------------------------------------------
 Private Sub UserForm_Initialize()
     On Error GoTo ErrHandler
@@ -37,6 +41,20 @@ Private Sub UserForm_Initialize()
     Me.lblReason.Visible = False
     Me.txtReason.Visible = False
     Me.txtReason.Value = ""
+
+    ' --- Hide RCA fields by default ---
+    Me.lblRootCause.Visible = False
+    Me.txtRootCause.Visible = False
+    Me.txtRootCause.Value = ""
+    Me.lblCorrectiveAction.Visible = False
+    Me.txtCorrectiveAction.Visible = False
+    Me.txtCorrectiveAction.Value = ""
+    Me.lblPreventiveAction.Visible = False
+    Me.txtPreventiveAction.Visible = False
+    Me.txtPreventiveAction.Value = ""
+    Me.lblResolutionNotes.Visible = False
+    Me.txtResolutionNotes.Visible = False
+    Me.txtResolutionNotes.Value = ""
 
     ' --- Clear info labels ---
     Me.lblCurrentStatus.Caption = ""
@@ -95,7 +113,8 @@ End Sub
 ' ----------------------------------------------------------------------------
 ' lstIncidents_Click
 ' When an incident is selected, display its current status info and populate
-' cboNewStatus with valid next statuses from the state machine.
+' cboNewStatus with valid next statuses from the state machine. Reset all
+' conditional fields (reason and RCA).
 ' ----------------------------------------------------------------------------
 Private Sub lstIncidents_Click()
     On Error GoTo ErrHandler
@@ -164,6 +183,20 @@ Private Sub lstIncidents_Click()
     Me.txtReason.Visible = False
     Me.txtReason.Value = ""
 
+    ' Reset RCA fields
+    Me.lblRootCause.Visible = False
+    Me.txtRootCause.Visible = False
+    Me.txtRootCause.Value = ""
+    Me.lblCorrectiveAction.Visible = False
+    Me.txtCorrectiveAction.Visible = False
+    Me.txtCorrectiveAction.Value = ""
+    Me.lblPreventiveAction.Visible = False
+    Me.txtPreventiveAction.Visible = False
+    Me.txtPreventiveAction.Value = ""
+    Me.lblResolutionNotes.Visible = False
+    Me.txtResolutionNotes.Visible = False
+    Me.txtResolutionNotes.Value = ""
+
     Exit Sub
 ErrHandler:
     modErrorHandler.HandleError "frmStatusUpdate", "lstIncidents_Click", _
@@ -172,12 +205,16 @@ End Sub
 
 ' ----------------------------------------------------------------------------
 ' cboNewStatus_Change
-' Shows or hides the reason TextBox based on whether the selected new status
-' is Cancelled or Duplicate (which require a mandatory reason).
+' Shows or hides conditional fields based on the selected new status:
+'   - Cancelled/Duplicate: shows reason TextBox (mandatory)
+'   - Resolved: shows RCA fields (root cause mandatory, others optional)
+'   - Other statuses: all conditional fields hidden
+' Reason and RCA fields are mutually exclusive (never shown simultaneously).
 ' ----------------------------------------------------------------------------
 Private Sub cboNewStatus_Change()
     On Error GoTo ErrHandler
 
+    ' --- Reason field for Cancelled/Duplicate ---
     Dim bShowReason As Boolean
     bShowReason = (Me.cboNewStatus.Value = STATUS_CANCELLED Or _
                    Me.cboNewStatus.Value = STATUS_DUPLICATE)
@@ -188,6 +225,26 @@ Private Sub cboNewStatus_Change()
         Me.txtReason.Value = ""
     End If
 
+    ' --- RCA fields for Resolved ---
+    Dim bShowRCA As Boolean
+    bShowRCA = (Me.cboNewStatus.Value = STATUS_RESOLVED)
+
+    Me.lblRootCause.Visible = bShowRCA
+    Me.txtRootCause.Visible = bShowRCA
+    Me.lblCorrectiveAction.Visible = bShowRCA
+    Me.txtCorrectiveAction.Visible = bShowRCA
+    Me.lblPreventiveAction.Visible = bShowRCA
+    Me.txtPreventiveAction.Visible = bShowRCA
+    Me.lblResolutionNotes.Visible = bShowRCA
+    Me.txtResolutionNotes.Visible = bShowRCA
+
+    If Not bShowRCA Then
+        Me.txtRootCause.Value = ""
+        Me.txtCorrectiveAction.Value = ""
+        Me.txtPreventiveAction.Value = ""
+        Me.txtResolutionNotes.Value = ""
+    End If
+
     Exit Sub
 ErrHandler:
     modErrorHandler.HandleError "frmStatusUpdate", "cboNewStatus_Change", _
@@ -196,8 +253,10 @@ End Sub
 
 ' ----------------------------------------------------------------------------
 ' btnUpdateStatus_Click
-' Validates selections, writes status + timestamp (+ reason if applicable)
+' Validates selections, writes status + timestamp (+ reason OR RCA fields)
 ' atomically via UpdateIncidentFields, refreshes tracker, and closes form.
+' For Resolved status: validates root cause is provided, writes RCA data to
+' both tblIncidents (inline columns) and tblRCALog (dedicated table).
 ' ----------------------------------------------------------------------------
 Private Sub btnUpdateStatus_Click()
     On Error GoTo ErrHandler
@@ -213,14 +272,25 @@ Private Sub btnUpdateStatus_Click()
         Exit Sub
     End If
 
-    ' Check if reason is required
     Dim sNewStatus As String
     sNewStatus = Me.cboNewStatus.Value
+
+    ' Check if reason is required (Cancelled/Duplicate)
     If (sNewStatus = STATUS_CANCELLED Or sNewStatus = STATUS_DUPLICATE) Then
         If Len(Trim(Me.txtReason.Value)) = 0 Then
             MsgBox "Please provide a reason for " & sNewStatus & ".", _
                    vbExclamation, APP_TITLE
             Me.txtReason.SetFocus
+            Exit Sub
+        End If
+    End If
+
+    ' Check if root cause is required (Resolved)
+    If sNewStatus = STATUS_RESOLVED Then
+        If Len(Trim(Me.txtRootCause.Value)) = 0 Then
+            MsgBox "Please provide a root cause for the resolution.", _
+                   vbExclamation, APP_TITLE
+            Me.txtRootCause.SetFocus
             Exit Sub
         End If
     End If
@@ -236,7 +306,14 @@ Private Sub btnUpdateStatus_Click()
     Dim vNames As Variant
     Dim vValues As Variant
 
-    If (sNewStatus = STATUS_CANCELLED Or sNewStatus = STATUS_DUPLICATE) Then
+    If sNewStatus = STATUS_RESOLVED Then
+        ' Include RCA columns in tblIncidents (dual-write: inline)
+        vNames = Array(COL_STATUS, sTimestampCol, COL_RESOLUTION_NOTES, _
+                       COL_ROOT_CAUSE, COL_CORRECTIVE_ACTION, COL_PREVENTIVE_ACTION)
+        vValues = Array(sNewStatus, Now, Trim(Me.txtResolutionNotes.Value), _
+                        Trim(Me.txtRootCause.Value), Trim(Me.txtCorrectiveAction.Value), _
+                        Trim(Me.txtPreventiveAction.Value))
+    ElseIf (sNewStatus = STATUS_CANCELLED Or sNewStatus = STATUS_DUPLICATE) Then
         ' Include cancellation/duplicate reason in ResolutionNotes column
         vNames = Array(COL_STATUS, sTimestampCol, COL_RESOLUTION_NOTES)
         vValues = Array(sNewStatus, Now, Trim(Me.txtReason.Value))
@@ -249,6 +326,23 @@ Private Sub btnUpdateStatus_Click()
     bSuccess = modDataAccess.UpdateIncidentFields(sIncidentID, vNames, vValues)
 
     If bSuccess Then
+        ' For Resolved: also write to RCA Log (dual-write: dedicated table)
+        If sNewStatus = STATUS_RESOLVED Then
+            ' Get incident title for denormalized storage in RCA Log
+            Dim sTitle As String
+            sTitle = Me.lstIncidents.List(Me.lstIncidents.ListIndex, 1)
+
+            Dim bRCA As Boolean
+            bRCA = modDataAccess.WriteRCARecord(sIncidentID, sTitle, _
+                        Trim(Me.txtRootCause.Value), _
+                        Trim(Me.txtCorrectiveAction.Value), _
+                        Trim(Me.txtPreventiveAction.Value), _
+                        Trim(Me.txtResolutionNotes.Value))
+            If Not bRCA Then
+                Debug.Print "WARNING: Incident resolved but RCA Log write failed for " & sIncidentID
+            End If
+        End If
+
         MsgBox "Incident " & sIncidentID & " status updated to " & sNewStatus & ".", _
                vbInformation, APP_TITLE
         modAssignment.RefreshAssignmentTracker
