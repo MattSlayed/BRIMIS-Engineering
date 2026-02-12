@@ -5,11 +5,15 @@ Injects all VBA modules into the BRIMIS IMS workbook using win32com Excel automa
 
 This script:
 1. Opens BRIMIS_IMS.xlsx (or .xlsm if it already exists)
-2. Imports 7 standard .bas modules into the VBA project
+2. Imports 9 standard .bas modules into the VBA project
 3. Writes ThisWorkbook.cls code into the existing ThisWorkbook code module
-4. Creates the frmIncidentEntry UserForm with all controls programmatically
-5. Adds a "Log New Incident" button shape on the Dashboard sheet
-6. Saves the workbook as BRIMIS_IMS.xlsm (macro-enabled format)
+4. Creates 3 UserForms programmatically:
+   - frmIncidentEntry (Phase 2: 4-page wizard for logging incidents)
+   - frmAssignment (Phase 3: assign incidents to team/person)
+   - frmStatusUpdate (Phase 3: update status with enforced transitions)
+5. Adds 3 Dashboard buttons (Log New Incident, Assign Incident, Update Status)
+6. Adds 1 Refresh Tracker button on the Assignment Tracker sheet
+7. Saves the workbook as BRIMIS_IMS.xlsm (macro-enabled format)
 
 Prerequisites:
 - Python 3.x with pywin32 (pip install pywin32)
@@ -55,13 +59,17 @@ STANDARD_MODULES = [
     "modDataAccess.bas",
     "modInitialize.bas",
     "modIncidentEntry.bas",
+    "modAssignment.bas",       # Phase 3
+    "modStatusUpdate.bas",     # Phase 3
 ]
 
 # ThisWorkbook is handled specially (code written to existing component)
 THISWORKBOOK_FILE = "ThisWorkbook.cls"
 
-# UserForm code file (no Attribute VB_Name line -- injected via CodeModule.AddFromString)
+# UserForm code files (no Attribute VB_Name line -- injected via CodeModule.AddFromString)
 FORM_CODE_FILE = "frmIncidentEntry.bas"
+ASSIGNMENT_FORM_CODE_FILE = "frmAssignment.bas"       # Phase 3
+STATUS_UPDATE_FORM_CODE_FILE = "frmStatusUpdate.bas"   # Phase 3
 
 # Excel file format constants
 XL_OPEN_XML_WORKBOOK_MACRO_ENABLED = 52  # .xlsm
@@ -595,44 +603,486 @@ def create_incident_entry_form(vb_project):
     return True
 
 
-def add_dashboard_button(wb):
-    """Add a 'Log New Incident' button shape on the Dashboard sheet.
+def create_assignment_form(vb_project):
+    """Create the frmAssignment UserForm with all controls programmatically.
 
-    Creates a BRIMIS-branded rounded rectangle shape that calls
-    ShowIncidentEntryForm when clicked.
+    Builds a single-page assignment form with:
+      - ListBox for selecting Open incidents (ID, Title, Priority)
+      - Incident detail labels (category, priority, reporter, date)
+      - Team ComboBox and cascading Person ComboBox
+      - Assign and Cancel buttons
+      - Form event handler code from frmAssignment.bas
+    """
+    form_name = "frmAssignment"
+
+    # Remove existing form if present (for re-runs)
+    try:
+        existing = vb_project.VBComponents(form_name)
+        vb_project.VBComponents.Remove(existing)
+        print(f"  Removed existing form: {form_name}")
+    except com_error:
+        pass
+
+    # Create the UserForm
+    print(f"  Creating UserForm: {form_name}")
+    form_comp = vb_project.VBComponents.Add(VBEXT_CT_MSFORM)
+    form_comp.Properties("Name").Value = form_name
+    form_comp.Properties("Caption").Value = "BRIMIS - Assign Incident"
+    form_comp.Properties("Width").Value = 520
+    form_comp.Properties("Height").Value = 480
+    form_comp.Properties("BackColor").Value = 16777215  # White
+
+    designer = form_comp.Designer
+
+    # =====================================================================
+    # Header Label
+    # =====================================================================
+    lbl = designer.Controls.Add("Forms.Label.1", "lblFormHeader", True)
+    lbl.Caption = "Assign Incident to Team and Individual"
+    lbl.Left = 12
+    lbl.Top = 8
+    lbl.Width = 480
+    lbl.Height = 22
+    lbl.Font.Size = 12
+    lbl.Font.Bold = True
+    lbl.ForeColor = 2372078  # CLR_BRIMIS_RED
+
+    # =====================================================================
+    # Incident Selection Section
+    # =====================================================================
+    lbl = designer.Controls.Add("Forms.Label.1", "lblSelectIncident", True)
+    lbl.Caption = "Select an Open Incident:"
+    lbl.Left = 12
+    lbl.Top = 36
+    lbl.Width = 300
+    lbl.Height = 16
+    lbl.ForeColor = 1052688  # CLR_BRIMIS_DARK
+
+    # ListBox for incidents (3 columns: ID, Title, Priority)
+    lst = designer.Controls.Add("Forms.ListBox.1", "lstIncidents", True)
+    lst.Left = 12
+    lst.Top = 54
+    lst.Width = 490
+    lst.Height = 120
+    lst.ColumnCount = 3
+    lst.ColumnWidths = "80;330;50"
+    lst.BoundColumn = 1
+
+    # =====================================================================
+    # Incident Details Section (read-only info labels)
+    # =====================================================================
+    lbl = designer.Controls.Add("Forms.Label.1", "lblDetailsSection", True)
+    lbl.Caption = "Incident Details:"
+    lbl.Left = 12
+    lbl.Top = 182
+    lbl.Width = 200
+    lbl.Height = 16
+    lbl.Font.Bold = True
+    lbl.ForeColor = 1052688
+
+    # Info labels (populated by lstIncidents_Click)
+    info_labels = [
+        ("lblInfoCategory",    "",  202),
+        ("lblInfoPriority",    "",  220),
+        ("lblInfoReportedBy",  "",  238),
+        ("lblInfoReportedDate","",  256),
+    ]
+    for name, caption, top in info_labels:
+        lbl = designer.Controls.Add("Forms.Label.1", name, True)
+        lbl.Caption = caption
+        lbl.Left = 24
+        lbl.Top = top
+        lbl.Width = 460
+        lbl.Height = 16
+        lbl.ForeColor = 1052688
+
+    # =====================================================================
+    # Assignment Section
+    # =====================================================================
+    lbl = designer.Controls.Add("Forms.Label.1", "lblAssignSection", True)
+    lbl.Caption = "Assignment:"
+    lbl.Left = 12
+    lbl.Top = 284
+    lbl.Width = 200
+    lbl.Height = 16
+    lbl.Font.Bold = True
+    lbl.ForeColor = 1052688
+
+    # Team label
+    lbl = designer.Controls.Add("Forms.Label.1", "lblTeam", True)
+    lbl.Caption = "Team: *"
+    lbl.Left = 12
+    lbl.Top = 308
+    lbl.Width = 80
+    lbl.Height = 18
+    lbl.ForeColor = 1052688
+
+    # Team ComboBox
+    cbo = designer.Controls.Add("Forms.ComboBox.1", "cboTeam", True)
+    cbo.Left = 100
+    cbo.Top = 306
+    cbo.Width = 300
+    cbo.Height = 22
+    cbo.Style = 2  # fmStyleDropDownList
+
+    # Assignee label
+    lbl = designer.Controls.Add("Forms.Label.1", "lblPerson", True)
+    lbl.Caption = "Assignee: *"
+    lbl.Left = 12
+    lbl.Top = 342
+    lbl.Width = 80
+    lbl.Height = 18
+    lbl.ForeColor = 1052688
+
+    # Person ComboBox (cascading from team)
+    cbo = designer.Controls.Add("Forms.ComboBox.1", "cboPerson", True)
+    cbo.Left = 100
+    cbo.Top = 340
+    cbo.Width = 300
+    cbo.Height = 22
+    cbo.Style = 2  # fmStyleDropDownList
+
+    # =====================================================================
+    # Action Buttons
+    # =====================================================================
+    # Assign button
+    btn = designer.Controls.Add("Forms.CommandButton.1", "btnAssign", True)
+    btn.Caption = "Assign"
+    btn.Left = 310
+    btn.Top = 400
+    btn.Width = 90
+    btn.Height = 30
+    btn.BackColor = 2372078  # CLR_BRIMIS_RED
+    btn.ForeColor = 16777215  # White
+    btn.BackStyle = 1  # fmBackStyleOpaque
+
+    # Cancel button
+    btn = designer.Controls.Add("Forms.CommandButton.1", "btnCancel", True)
+    btn.Caption = "Cancel"
+    btn.Left = 416
+    btn.Top = 400
+    btn.Width = 90
+    btn.Height = 30
+    btn.BackColor = 3946290  # CLR_BRIMIS_GRAY
+    btn.ForeColor = 16777215  # White
+    btn.BackStyle = 1  # fmBackStyleOpaque
+
+    # =====================================================================
+    # Inject form code from frmAssignment.bas
+    # =====================================================================
+    print("  Injecting assignment form event handler code...")
+    form_code_path = os.path.join(VBA_MODULES_DIR, ASSIGNMENT_FORM_CODE_FILE)
+
+    if not os.path.exists(form_code_path):
+        print(f"  ERROR: Form code file not found: {form_code_path}")
+        return False
+
+    with open(form_code_path, "r", encoding="utf-8") as f:
+        form_code = f.read()
+
+    clean_lines = [
+        line for line in form_code.split('\n')
+        if not line.strip().startswith('Attribute ')
+    ]
+    clean_code = '\n'.join(clean_lines)
+
+    code_module = form_comp.CodeModule
+    if code_module.CountOfLines > 0:
+        code_module.DeleteLines(1, code_module.CountOfLines)
+    code_module.AddFromString(clean_code)
+
+    print(f"  UserForm {form_name} created successfully with all controls and code")
+    return True
+
+
+def create_status_update_form(vb_project):
+    """Create the frmStatusUpdate UserForm with all controls programmatically.
+
+    Builds a single-page status update form with:
+      - ListBox for selecting non-terminal incidents (ID, Title, Status)
+      - Current status info labels (status, assignee, date)
+      - New Status ComboBox (valid transitions only)
+      - Reason TextBox (visible only for Cancelled/Duplicate)
+      - Update Status and Cancel buttons
+      - Form event handler code from frmStatusUpdate.bas
+    """
+    form_name = "frmStatusUpdate"
+
+    # Remove existing form if present (for re-runs)
+    try:
+        existing = vb_project.VBComponents(form_name)
+        vb_project.VBComponents.Remove(existing)
+        print(f"  Removed existing form: {form_name}")
+    except com_error:
+        pass
+
+    # Create the UserForm
+    print(f"  Creating UserForm: {form_name}")
+    form_comp = vb_project.VBComponents.Add(VBEXT_CT_MSFORM)
+    form_comp.Properties("Name").Value = form_name
+    form_comp.Properties("Caption").Value = "BRIMIS - Update Incident Status"
+    form_comp.Properties("Width").Value = 520
+    form_comp.Properties("Height").Value = 500
+    form_comp.Properties("BackColor").Value = 16777215  # White
+
+    designer = form_comp.Designer
+
+    # =====================================================================
+    # Header Label
+    # =====================================================================
+    lbl = designer.Controls.Add("Forms.Label.1", "lblFormHeader", True)
+    lbl.Caption = "Update Incident Status"
+    lbl.Left = 12
+    lbl.Top = 8
+    lbl.Width = 480
+    lbl.Height = 22
+    lbl.Font.Size = 12
+    lbl.Font.Bold = True
+    lbl.ForeColor = 2372078  # CLR_BRIMIS_RED
+
+    # =====================================================================
+    # Incident Selection Section
+    # =====================================================================
+    lbl = designer.Controls.Add("Forms.Label.1", "lblSelectIncident", True)
+    lbl.Caption = "Select an Incident:"
+    lbl.Left = 12
+    lbl.Top = 36
+    lbl.Width = 300
+    lbl.Height = 16
+    lbl.ForeColor = 1052688
+
+    # ListBox for incidents (3 columns: ID, Title, Status)
+    lst = designer.Controls.Add("Forms.ListBox.1", "lstIncidents", True)
+    lst.Left = 12
+    lst.Top = 54
+    lst.Width = 490
+    lst.Height = 120
+    lst.ColumnCount = 3
+    lst.ColumnWidths = "80;300;80"
+    lst.BoundColumn = 1
+
+    # =====================================================================
+    # Current Status Section
+    # =====================================================================
+    lbl = designer.Controls.Add("Forms.Label.1", "lblStatusSection", True)
+    lbl.Caption = "Current Status:"
+    lbl.Left = 12
+    lbl.Top = 182
+    lbl.Width = 200
+    lbl.Height = 16
+    lbl.Font.Bold = True
+    lbl.ForeColor = 1052688
+
+    # Current status info labels
+    lbl = designer.Controls.Add("Forms.Label.1", "lblCurrentStatus", True)
+    lbl.Caption = ""
+    lbl.Left = 24
+    lbl.Top = 202
+    lbl.Width = 460
+    lbl.Height = 16
+    lbl.ForeColor = 1052688
+
+    lbl = designer.Controls.Add("Forms.Label.1", "lblCurrentAssignee", True)
+    lbl.Caption = ""
+    lbl.Left = 24
+    lbl.Top = 220
+    lbl.Width = 460
+    lbl.Height = 16
+    lbl.ForeColor = 1052688
+
+    lbl = designer.Controls.Add("Forms.Label.1", "lblCurrentDate", True)
+    lbl.Caption = ""
+    lbl.Left = 24
+    lbl.Top = 238
+    lbl.Width = 460
+    lbl.Height = 16
+    lbl.ForeColor = 1052688
+
+    # =====================================================================
+    # New Status Section
+    # =====================================================================
+    lbl = designer.Controls.Add("Forms.Label.1", "lblNewStatusSection", True)
+    lbl.Caption = "Update To:"
+    lbl.Left = 12
+    lbl.Top = 268
+    lbl.Width = 200
+    lbl.Height = 16
+    lbl.Font.Bold = True
+    lbl.ForeColor = 1052688
+
+    # New Status label
+    lbl = designer.Controls.Add("Forms.Label.1", "lblNewStatus", True)
+    lbl.Caption = "New Status: *"
+    lbl.Left = 12
+    lbl.Top = 292
+    lbl.Width = 80
+    lbl.Height = 18
+    lbl.ForeColor = 1052688
+
+    # New Status ComboBox
+    cbo = designer.Controls.Add("Forms.ComboBox.1", "cboNewStatus", True)
+    cbo.Left = 100
+    cbo.Top = 290
+    cbo.Width = 200
+    cbo.Height = 22
+    cbo.Style = 2  # fmStyleDropDownList
+
+    # Reason label (hidden by default -- shown for Cancelled/Duplicate)
+    lbl = designer.Controls.Add("Forms.Label.1", "lblReason", True)
+    lbl.Caption = "Reason: *"
+    lbl.Left = 12
+    lbl.Top = 324
+    lbl.Width = 80
+    lbl.Height = 18
+    lbl.ForeColor = 1052688
+    lbl.Visible = False
+
+    # Reason TextBox (hidden by default, multiline)
+    txt = designer.Controls.Add("Forms.TextBox.1", "txtReason", True)
+    txt.Left = 100
+    txt.Top = 322
+    txt.Width = 400
+    txt.Height = 80
+    txt.MultiLine = True
+    txt.ScrollBars = 2  # fmScrollBarsVertical
+    txt.WordWrap = True
+    txt.EnterKeyBehavior = True
+    txt.Visible = False
+
+    # =====================================================================
+    # Action Buttons
+    # =====================================================================
+    # Update Status button
+    btn = designer.Controls.Add("Forms.CommandButton.1", "btnUpdateStatus", True)
+    btn.Caption = "Update Status"
+    btn.Left = 280
+    btn.Top = 430
+    btn.Width = 120
+    btn.Height = 30
+    btn.BackColor = 2372078  # CLR_BRIMIS_RED
+    btn.ForeColor = 16777215  # White
+    btn.BackStyle = 1  # fmBackStyleOpaque
+
+    # Cancel button
+    btn = designer.Controls.Add("Forms.CommandButton.1", "btnCancel", True)
+    btn.Caption = "Cancel"
+    btn.Left = 416
+    btn.Top = 430
+    btn.Width = 90
+    btn.Height = 30
+    btn.BackColor = 3946290  # CLR_BRIMIS_GRAY
+    btn.ForeColor = 16777215  # White
+    btn.BackStyle = 1  # fmBackStyleOpaque
+
+    # =====================================================================
+    # Inject form code from frmStatusUpdate.bas
+    # =====================================================================
+    print("  Injecting status update form event handler code...")
+    form_code_path = os.path.join(VBA_MODULES_DIR, STATUS_UPDATE_FORM_CODE_FILE)
+
+    if not os.path.exists(form_code_path):
+        print(f"  ERROR: Form code file not found: {form_code_path}")
+        return False
+
+    with open(form_code_path, "r", encoding="utf-8") as f:
+        form_code = f.read()
+
+    clean_lines = [
+        line for line in form_code.split('\n')
+        if not line.strip().startswith('Attribute ')
+    ]
+    clean_code = '\n'.join(clean_lines)
+
+    code_module = form_comp.CodeModule
+    if code_module.CountOfLines > 0:
+        code_module.DeleteLines(1, code_module.CountOfLines)
+    code_module.AddFromString(clean_code)
+
+    print(f"  UserForm {form_name} created successfully with all controls and code")
+    return True
+
+
+def add_dashboard_buttons(wb):
+    """Add action buttons on the Dashboard sheet.
+
+    Creates BRIMIS-branded rounded rectangle shapes:
+    - 'Log New Incident' (Left=30) -> ShowIncidentEntryForm
+    - 'Assign Incident' (Left=270) -> ShowAssignmentForm
+    - 'Update Status' (Left=510) -> ShowStatusUpdateForm
     """
     dashboard = wb.Sheets("Dashboard")
 
-    # Remove existing button if present (for re-runs)
+    # Define all buttons
+    buttons = [
+        {"name": "btnLogIncident",    "caption": "Log New Incident",  "left": 30,  "macro": "ShowIncidentEntryForm"},
+        {"name": "btnAssignIncident", "caption": "Assign Incident",   "left": 270, "macro": "ShowAssignmentForm"},
+        {"name": "btnUpdateStatus",   "caption": "Update Status",     "left": 510, "macro": "ShowStatusUpdateForm"},
+    ]
+
+    for btn_def in buttons:
+        # Remove existing button if present (for re-runs)
+        try:
+            dashboard.Shapes(btn_def["name"]).Delete()
+            print(f"  Removed existing button: {btn_def['name']}")
+        except Exception:
+            pass
+
+        # msoShapeRoundedRectangle = 5
+        # Top=60 (below header bar), Width=220, Height=50
+        shape = dashboard.Shapes.AddShape(5, btn_def["left"], 60, 220, 50)
+        shape.Name = btn_def["name"]
+
+        # BRIMIS Red fill
+        shape.Fill.ForeColor.RGB = 2372078  # CLR_BRIMIS_RED
+        shape.Line.Visible = False
+
+        # Text formatting
+        tf = shape.TextFrame2
+        tf.TextRange.Text = btn_def["caption"]
+        tf.TextRange.Font.Size = 14
+        tf.TextRange.Font.Bold = True
+        tf.TextRange.Font.Fill.ForeColor.RGB = 16777215  # White
+        tf.VerticalAnchor = 3  # msoAnchorMiddle
+        tf.TextRange.ParagraphFormat.Alignment = 2  # msoAlignCenter
+
+        # Assign the macro
+        shape.OnAction = btn_def["macro"]
+
+        print(f"  Created Dashboard button: {btn_def['name']} -> {btn_def['macro']}")
+
+    return True
+
+
+def add_tracker_refresh_button(wb):
+    """Add a 'Refresh Tracker' button on the Assignment Tracker sheet."""
+    tracker_sheet = wb.Sheets("Assignment Tracker")
+
+    # Remove existing button if present
     try:
-        dashboard.Shapes("btnLogIncident").Delete()
-        print("  Removed existing Dashboard button")
+        tracker_sheet.Shapes("btnRefreshTracker").Delete()
+        print("  Removed existing Refresh button")
     except Exception:
         pass
 
+    # Place button in top-right area (next to header)
     # msoShapeRoundedRectangle = 5
-    # Position: Left=30, Top=60 (below header bar), Width=220, Height=50
-    shape = dashboard.Shapes.AddShape(5, 30, 60, 220, 50)
-    shape.Name = "btnLogIncident"
+    shape = tracker_sheet.Shapes.AddShape(5, 350, 2, 150, 28)
+    shape.Name = "btnRefreshTracker"
 
-    # Style the shape with BRIMIS branding
-    # CLR_BRIMIS_RED = 2372078 (already in Long/BGR format for OLE_COLOR)
-    shape.Fill.ForeColor.RGB = 2372078
+    shape.Fill.ForeColor.RGB = 2372078  # CLR_BRIMIS_RED
     shape.Line.Visible = False
 
-    # Text formatting
     tf = shape.TextFrame2
-    tf.TextRange.Text = "Log New Incident"
-    tf.TextRange.Font.Size = 14
+    tf.TextRange.Text = "Refresh Tracker"
+    tf.TextRange.Font.Size = 11
     tf.TextRange.Font.Bold = True
     tf.TextRange.Font.Fill.ForeColor.RGB = 16777215  # White
     tf.VerticalAnchor = 3  # msoAnchorMiddle
     tf.TextRange.ParagraphFormat.Alignment = 2  # msoAlignCenter
 
-    # Assign the macro
-    shape.OnAction = "ShowIncidentEntryForm"
+    shape.OnAction = "RefreshAssignmentTracker"
 
-    print("  Created Dashboard button: btnLogIncident -> ShowIncidentEntryForm")
+    print("  Created Tracker button: btnRefreshTracker -> RefreshAssignmentTracker")
     return True
 
 
@@ -698,23 +1148,50 @@ def main():
         print("Injecting ThisWorkbook code...")
         thisworkbook_ok = inject_thisworkbook_code(wb.VBProject)
 
-        # Create the UserForm
+        # Create the Incident Entry UserForm (Phase 2)
         print()
         print("Creating incident entry UserForm...")
-        form_ok = False
+        form_incident_ok = False
         try:
-            form_ok = create_incident_entry_form(wb.VBProject)
+            form_incident_ok = create_incident_entry_form(wb.VBProject)
         except Exception as e:
-            print(f"  ERROR creating UserForm: {e}")
+            print(f"  ERROR creating incident entry form: {e}")
 
-        # Add Dashboard button
+        # Create the Assignment UserForm (Phase 3)
         print()
-        print("Adding Dashboard launch button...")
-        button_ok = False
+        print("Creating assignment UserForm...")
+        form_assignment_ok = False
         try:
-            button_ok = add_dashboard_button(wb)
+            form_assignment_ok = create_assignment_form(wb.VBProject)
         except Exception as e:
-            print(f"  ERROR adding Dashboard button: {e}")
+            print(f"  ERROR creating assignment form: {e}")
+
+        # Create the Status Update UserForm (Phase 3)
+        print()
+        print("Creating status update UserForm...")
+        form_status_ok = False
+        try:
+            form_status_ok = create_status_update_form(wb.VBProject)
+        except Exception as e:
+            print(f"  ERROR creating status update form: {e}")
+
+        # Add Dashboard buttons (Phase 2 + Phase 3)
+        print()
+        print("Adding Dashboard action buttons...")
+        buttons_ok = False
+        try:
+            buttons_ok = add_dashboard_buttons(wb)
+        except Exception as e:
+            print(f"  ERROR adding Dashboard buttons: {e}")
+
+        # Add Assignment Tracker refresh button (Phase 3)
+        print()
+        print("Adding Assignment Tracker refresh button...")
+        tracker_btn_ok = False
+        try:
+            tracker_btn_ok = add_tracker_refresh_button(wb)
+        except Exception as e:
+            print(f"  ERROR adding tracker refresh button: {e}")
 
         # Save as .xlsm (macro-enabled format)
         print()
@@ -725,16 +1202,23 @@ def main():
             print(f"Saving workbook: {os.path.basename(XLSM_PATH)}")
             wb.Save()
 
+        # Injection summary
         print()
         print("=" * 60)
         print("INJECTION SUMMARY")
         print("=" * 60)
         print(f"  Standard modules imported: {imported_count}/{len(STANDARD_MODULES)}")
         print(f"  ThisWorkbook code injected: {'Yes' if thisworkbook_ok else 'No'}")
-        print(f"  UserForm created: {'Yes' if form_ok else 'No'}")
-        print(f"  Dashboard button added: {'Yes' if button_ok else 'No'}")
-        total_ok = imported_count + (1 if thisworkbook_ok else 0) + (1 if form_ok else 0)
-        total_expected = len(STANDARD_MODULES) + 2  # modules + ThisWorkbook + UserForm
+        print(f"  Incident entry form: {'Yes' if form_incident_ok else 'No'}")
+        print(f"  Assignment form: {'Yes' if form_assignment_ok else 'No'}")
+        print(f"  Status update form: {'Yes' if form_status_ok else 'No'}")
+        print(f"  Dashboard buttons: {'Yes' if buttons_ok else 'No'}")
+        print(f"  Tracker refresh button: {'Yes' if tracker_btn_ok else 'No'}")
+        total_ok = imported_count + (1 if thisworkbook_ok else 0) + \
+                   (1 if form_incident_ok else 0) + \
+                   (1 if form_assignment_ok else 0) + \
+                   (1 if form_status_ok else 0)
+        total_expected = len(STANDARD_MODULES) + 4  # modules + ThisWorkbook + 3 UserForms
         print(f"  Total VBA components: {total_ok}/{total_expected}")
         print(f"  Output file: {XLSM_PATH}")
 
@@ -743,10 +1227,11 @@ def main():
             print(f"  File size: {size_kb:.1f} KB")
 
         all_ok = (imported_count == len(STANDARD_MODULES) and thisworkbook_ok
-                  and form_ok and button_ok)
+                  and form_incident_ok and form_assignment_ok and form_status_ok
+                  and buttons_ok and tracker_btn_ok)
         print()
         if all_ok:
-            print("SUCCESS: All VBA modules, UserForm, and Dashboard button injected.")
+            print("SUCCESS: All VBA modules, UserForms, buttons, and tracker injected.")
         else:
             print("WARNING: Some components may not have been created. Check output above.")
 

@@ -69,6 +69,9 @@ def create_workbook():
     ws_settings = wb.create_sheet("Settings")
     ws_settings.sheet_properties.tabColor = BRIMIS_GRAY
 
+    ws_assignment_tracker = wb.create_sheet("Assignment Tracker")
+    ws_assignment_tracker.sheet_properties.tabColor = BRIMIS_GRAY
+
     # =========================================================================
     # 2. Dashboard Sheet
     # =========================================================================
@@ -85,7 +88,12 @@ def create_workbook():
     _setup_incident_log(ws_incident_log)
 
     # =========================================================================
-    # 5. Save as .xlsx (VBA will be injected in Plan 03 to produce .xlsm)
+    # 5. Assignment Tracker Sheet
+    # =========================================================================
+    _setup_assignment_tracker(ws_assignment_tracker)
+
+    # =========================================================================
+    # 6. Save as .xlsx (VBA will be injected separately to produce .xlsm)
     # =========================================================================
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     output_path = os.path.join(project_root, "BRIMIS_IMS.xlsx")
@@ -325,6 +333,65 @@ def _setup_incident_log(ws):
 
 
 # =============================================================================
+# Assignment Tracker Sheet Setup
+# =============================================================================
+def _setup_assignment_tracker(ws):
+    """Configure the Assignment Tracker sheet with header bar and tblAssignmentTracker."""
+    # ----- Row 1: Header bar A1:H1 -----
+    ws.merge_cells("A1:H1")
+    cell = ws["A1"]
+    cell.value = "BRIMIS IMS - Assignment Tracker"
+    cell.fill = FILL_DARK
+    cell.font = FONT_HEADER_MEDIUM
+    cell.alignment = Alignment(horizontal="left", vertical="center")
+    ws.row_dimensions[1].height = 32
+
+    for col in range(1, 9):  # A through H
+        ws.cell(row=1, column=col).fill = FILL_DARK
+
+    # ----- Assignment Tracker table (Row 2 headers + Row 3 empty data row) -----
+    tracker_headers = [
+        "AssignedTeam", "AssignedTo", "IncidentID", "Title",
+        "Priority", "Status", "AssignedDate", "DaysOpen",
+    ]
+
+    # Write headers to row 2
+    for col_idx, header in enumerate(tracker_headers, start=1):
+        ws.cell(row=2, column=col_idx, value=header)
+
+    # Row 3: empty placeholder data row (openpyxl tables require at least 1 data row)
+    for col_idx in range(1, len(tracker_headers) + 1):
+        ws.cell(row=3, column=col_idx, value=None)
+
+    # Create the table tblAssignmentTracker from A2:H3
+    end_col_letter = get_column_letter(len(tracker_headers))  # H for 8 columns
+    table_ref = f"A2:{end_col_letter}3"
+    tbl = Table(displayName="tblAssignmentTracker", ref=table_ref)
+    tbl.tableStyleInfo = TABLE_STYLE
+    ws.add_table(tbl)
+
+    # Apply BRIMIS Red header formatting to row 2
+    for col_idx in range(1, len(tracker_headers) + 1):
+        cell = ws.cell(row=2, column=col_idx)
+        cell.fill = FILL_RED
+        cell.font = FONT_TABLE_HEADER
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    # ----- Column widths -----
+    tracker_col_widths = {
+        "AssignedTeam": 18, "AssignedTo": 18, "IncidentID": 14,
+        "Title": 30, "Priority": 10, "Status": 14,
+        "AssignedDate": 18, "DaysOpen": 10,
+    }
+    for col_idx, header in enumerate(tracker_headers, start=1):
+        col_letter = get_column_letter(col_idx)
+        ws.column_dimensions[col_letter].width = tracker_col_widths.get(header, 14)
+
+    # Freeze panes at row 3 (header bar + table header always visible)
+    ws.freeze_panes = "A3"
+
+
+# =============================================================================
 # Helper Functions
 # =============================================================================
 def _write_table_data(ws, start_row, start_col, headers, data):
@@ -364,7 +431,7 @@ def _create_table(ws, table_name, start_ref, end_ref, headers):
 if __name__ == "__main__":
     output = create_workbook()
     print(f"\nBRIMIS IMS workbook generated successfully.")
-    print(f"  Sheets: Dashboard, Incident Log, Settings")
-    print(f"  Tables: tblTeams, tblPersonnel, tblCategories, tblSLAThresholds, tblPriorityMatrix, tblIncidents")
+    print(f"  Sheets: Dashboard, Incident Log, Settings, Assignment Tracker")
+    print(f"  Tables: tblTeams, tblPersonnel, tblCategories, tblSLAThresholds, tblPriorityMatrix, tblIncidents, tblAssignmentTracker")
     print(f"  Output: {output}")
-    print(f"  Note: Saved as .xlsx -- VBA injection (Plan 03) will convert to .xlsm")
+    print(f"  Note: Saved as .xlsx -- VBA injection will convert to .xlsm")
