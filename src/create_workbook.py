@@ -72,6 +72,9 @@ def create_workbook():
     ws_assignment_tracker = wb.create_sheet("Assignment Tracker")
     ws_assignment_tracker.sheet_properties.tabColor = BRIMIS_GRAY
 
+    ws_rca_log = wb.create_sheet("RCA Log")
+    ws_rca_log.sheet_properties.tabColor = BRIMIS_GRAY
+
     # =========================================================================
     # 2. Dashboard Sheet
     # =========================================================================
@@ -93,7 +96,12 @@ def create_workbook():
     _setup_assignment_tracker(ws_assignment_tracker)
 
     # =========================================================================
-    # 6. Save as .xlsx (VBA will be injected separately to produce .xlsm)
+    # 6. RCA Log Sheet
+    # =========================================================================
+    _setup_rca_log(ws_rca_log)
+
+    # =========================================================================
+    # 7. Save as .xlsx (VBA will be injected separately to produce .xlsm)
     # =========================================================================
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     output_path = os.path.join(project_root, "BRIMIS_IMS.xlsx")
@@ -392,6 +400,75 @@ def _setup_assignment_tracker(ws):
 
 
 # =============================================================================
+# RCA Log Sheet Setup
+# =============================================================================
+def _setup_rca_log(ws):
+    """Configure the RCA Log sheet with header bar and tblRCALog."""
+    # ----- Row 1: Header bar A1:J1 -----
+    ws.merge_cells("A1:J1")
+    cell = ws["A1"]
+    cell.value = "BRIMIS IMS - RCA Log"
+    cell.fill = FILL_DARK
+    cell.font = FONT_HEADER_MEDIUM
+    cell.alignment = Alignment(horizontal="left", vertical="center")
+    ws.row_dimensions[1].height = 32
+
+    for col in range(1, 11):  # A through J (10 columns)
+        ws.cell(row=1, column=col).fill = FILL_DARK
+
+    # ----- RCA Log table (Row 2 headers + Row 3 empty data row) -----
+    # CRITICAL: Header strings MUST match the COL_RCA_* constant values in modConstants.bas EXACTLY
+    rca_headers = [
+        "RCAID",            # Auto-generated RCA-NNNNN
+        "IncidentID",       # Foreign key to tblIncidents
+        "IncidentTitle",    # Denormalized for readability
+        "RootCause",        # What caused the incident
+        "CorrectiveAction", # What was done to fix it
+        "PreventiveAction", # What will prevent recurrence
+        "ResolutionNotes",  # Additional resolution details
+        "ResolvedBy",       # Who resolved it (Application.UserName)
+        "ResolvedDate",     # When it was resolved (Now)
+        "LastModified",     # Audit timestamp (Now)
+    ]
+
+    # Write headers to row 2
+    for col_idx, header in enumerate(rca_headers, start=1):
+        ws.cell(row=2, column=col_idx, value=header)
+
+    # Row 3: empty placeholder data row (openpyxl tables require at least 1 data row)
+    for col_idx in range(1, len(rca_headers) + 1):
+        ws.cell(row=3, column=col_idx, value=None)
+
+    # Create the table tblRCALog from A2:J3
+    end_col_letter = get_column_letter(len(rca_headers))  # J for 10 columns
+    table_ref = f"A2:{end_col_letter}3"
+    tbl = Table(displayName="tblRCALog", ref=table_ref)
+    tbl.tableStyleInfo = TABLE_STYLE
+    ws.add_table(tbl)
+
+    # Apply BRIMIS Red header formatting to row 2
+    for col_idx in range(1, len(rca_headers) + 1):
+        cell = ws.cell(row=2, column=col_idx)
+        cell.fill = FILL_RED
+        cell.font = FONT_TABLE_HEADER
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    # ----- Column widths -----
+    rca_col_widths = {
+        "RCAID": 14, "IncidentID": 14, "IncidentTitle": 30,
+        "RootCause": 40, "CorrectiveAction": 40, "PreventiveAction": 40,
+        "ResolutionNotes": 30, "ResolvedBy": 16, "ResolvedDate": 18,
+        "LastModified": 18,
+    }
+    for col_idx, header in enumerate(rca_headers, start=1):
+        col_letter = get_column_letter(col_idx)
+        ws.column_dimensions[col_letter].width = rca_col_widths.get(header, 14)
+
+    # Freeze panes at row 3 (header bar + table header always visible)
+    ws.freeze_panes = "A3"
+
+
+# =============================================================================
 # Helper Functions
 # =============================================================================
 def _write_table_data(ws, start_row, start_col, headers, data):
@@ -431,7 +508,7 @@ def _create_table(ws, table_name, start_ref, end_ref, headers):
 if __name__ == "__main__":
     output = create_workbook()
     print(f"\nBRIMIS IMS workbook generated successfully.")
-    print(f"  Sheets: Dashboard, Incident Log, Settings, Assignment Tracker")
-    print(f"  Tables: tblTeams, tblPersonnel, tblCategories, tblSLAThresholds, tblPriorityMatrix, tblIncidents, tblAssignmentTracker")
+    print(f"  Sheets: Dashboard, Incident Log, Settings, Assignment Tracker, RCA Log")
+    print(f"  Tables: tblTeams, tblPersonnel, tblCategories, tblSLAThresholds, tblPriorityMatrix, tblIncidents, tblAssignmentTracker, tblRCALog")
     print(f"  Output: {output}")
     print(f"  Note: Saved as .xlsx -- VBA injection will convert to .xlsm")

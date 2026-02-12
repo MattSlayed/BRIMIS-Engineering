@@ -7,10 +7,10 @@ This script:
 1. Opens BRIMIS_IMS.xlsx (or .xlsm if it already exists)
 2. Imports 9 standard .bas modules into the VBA project
 3. Writes ThisWorkbook.cls code into the existing ThisWorkbook code module
-4. Creates 3 UserForms programmatically:
+4. Creates 3 UserForms programmatically (frmStatusUpdate extended with RCA fields in Phase 4):
    - frmIncidentEntry (Phase 2: 4-page wizard for logging incidents)
    - frmAssignment (Phase 3: assign incidents to team/person)
-   - frmStatusUpdate (Phase 3: update status with enforced transitions)
+   - frmStatusUpdate (Phase 3+4: update status with enforced transitions and RCA fields)
 5. Adds 3 Dashboard buttons (Log New Incident, Assign Incident, Update Status)
 6. Adds 1 Refresh Tracker button on the Assignment Tracker sheet
 7. Saves the workbook as BRIMIS_IMS.xlsm (macro-enabled format)
@@ -803,6 +803,8 @@ def create_status_update_form(vb_project):
       - Current status info labels (status, assignee, date)
       - New Status ComboBox (valid transitions only)
       - Reason TextBox (visible only for Cancelled/Duplicate)
+      - RCA fields: Root Cause, Corrective Action, Preventive Action, Resolution Notes
+        (visible only for Resolved, mutually exclusive with Reason field)
       - Update Status and Cancel buttons
       - Form event handler code from frmStatusUpdate.bas
     """
@@ -822,7 +824,7 @@ def create_status_update_form(vb_project):
     form_comp.Properties("Name").Value = form_name
     form_comp.Properties("Caption").Value = "BRIMIS - Update Incident Status"
     form_comp.Properties("Width").Value = 520
-    form_comp.Properties("Height").Value = 500
+    form_comp.Properties("Height").Value = 680
     form_comp.Properties("BackColor").Value = 16777215  # White
 
     designer = form_comp.Designer
@@ -950,13 +952,108 @@ def create_status_update_form(vb_project):
     txt.Visible = False
 
     # =====================================================================
+    # RCA Fields (hidden by default -- shown only for Resolved status)
+    # These occupy the same vertical space as the Reason field (mutually
+    # exclusive: Reason for Cancelled/Duplicate, RCA for Resolved).
+    # =====================================================================
+    RCA_LABEL_X = 12
+    RCA_FIELD_X = 100
+    RCA_FIELD_WIDTH = 400
+    RCA_FIELD_HEIGHT = 60
+    RCA_LABEL_WIDTH = 80
+
+    # Root Cause (Y=324, same start as Reason field)
+    lbl = designer.Controls.Add("Forms.Label.1", "lblRootCause", True)
+    lbl.Caption = "Root Cause: *"
+    lbl.Left = RCA_LABEL_X
+    lbl.Top = 324
+    lbl.Width = RCA_LABEL_WIDTH
+    lbl.Height = 18
+    lbl.ForeColor = 1052688  # CLR_BRIMIS_DARK
+    lbl.Visible = False
+
+    txt = designer.Controls.Add("Forms.TextBox.1", "txtRootCause", True)
+    txt.Left = RCA_FIELD_X
+    txt.Top = 322
+    txt.Width = RCA_FIELD_WIDTH
+    txt.Height = RCA_FIELD_HEIGHT
+    txt.MultiLine = True
+    txt.ScrollBars = 2  # fmScrollBarsVertical
+    txt.WordWrap = True
+    txt.EnterKeyBehavior = True
+    txt.Visible = False
+
+    # Corrective Action (Y=402)
+    lbl = designer.Controls.Add("Forms.Label.1", "lblCorrectiveAction", True)
+    lbl.Caption = "Corrective Action:"
+    lbl.Left = RCA_LABEL_X
+    lbl.Top = 402
+    lbl.Width = RCA_LABEL_WIDTH + 20
+    lbl.Height = 18
+    lbl.ForeColor = 1052688
+    lbl.Visible = False
+
+    txt = designer.Controls.Add("Forms.TextBox.1", "txtCorrectiveAction", True)
+    txt.Left = RCA_FIELD_X
+    txt.Top = 400
+    txt.Width = RCA_FIELD_WIDTH
+    txt.Height = RCA_FIELD_HEIGHT
+    txt.MultiLine = True
+    txt.ScrollBars = 2
+    txt.WordWrap = True
+    txt.EnterKeyBehavior = True
+    txt.Visible = False
+
+    # Preventive Action (Y=480)
+    lbl = designer.Controls.Add("Forms.Label.1", "lblPreventiveAction", True)
+    lbl.Caption = "Preventive Action:"
+    lbl.Left = RCA_LABEL_X
+    lbl.Top = 480
+    lbl.Width = RCA_LABEL_WIDTH + 20
+    lbl.Height = 18
+    lbl.ForeColor = 1052688
+    lbl.Visible = False
+
+    txt = designer.Controls.Add("Forms.TextBox.1", "txtPreventiveAction", True)
+    txt.Left = RCA_FIELD_X
+    txt.Top = 478
+    txt.Width = RCA_FIELD_WIDTH
+    txt.Height = RCA_FIELD_HEIGHT
+    txt.MultiLine = True
+    txt.ScrollBars = 2
+    txt.WordWrap = True
+    txt.EnterKeyBehavior = True
+    txt.Visible = False
+
+    # Resolution Notes (Y=558)
+    lbl = designer.Controls.Add("Forms.Label.1", "lblResolutionNotes", True)
+    lbl.Caption = "Resolution Notes:"
+    lbl.Left = RCA_LABEL_X
+    lbl.Top = 558
+    lbl.Width = RCA_LABEL_WIDTH + 20
+    lbl.Height = 18
+    lbl.ForeColor = 1052688
+    lbl.Visible = False
+
+    txt = designer.Controls.Add("Forms.TextBox.1", "txtResolutionNotes", True)
+    txt.Left = RCA_FIELD_X
+    txt.Top = 556
+    txt.Width = RCA_FIELD_WIDTH
+    txt.Height = RCA_FIELD_HEIGHT
+    txt.MultiLine = True
+    txt.ScrollBars = 2
+    txt.WordWrap = True
+    txt.EnterKeyBehavior = True
+    txt.Visible = False
+
+    # =====================================================================
     # Action Buttons
     # =====================================================================
     # Update Status button
     btn = designer.Controls.Add("Forms.CommandButton.1", "btnUpdateStatus", True)
     btn.Caption = "Update Status"
     btn.Left = 280
-    btn.Top = 430
+    btn.Top = 634  # Was 430, moved down for taller form
     btn.Width = 120
     btn.Height = 30
     btn.BackColor = 2372078  # CLR_BRIMIS_RED
@@ -967,7 +1064,7 @@ def create_status_update_form(vb_project):
     btn = designer.Controls.Add("Forms.CommandButton.1", "btnCancel", True)
     btn.Caption = "Cancel"
     btn.Left = 416
-    btn.Top = 430
+    btn.Top = 634  # Was 430, moved down for taller form
     btn.Width = 90
     btn.Height = 30
     btn.BackColor = 3946290  # CLR_BRIMIS_GRAY
