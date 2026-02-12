@@ -21,6 +21,10 @@ Public Const TBL_CATEGORIES As String = "tblCategories"
 Public Const TBL_SLA_THRESHOLDS As String = "tblSLAThresholds"
 Public Const TBL_PRIORITY_MATRIX As String = "tblPriorityMatrix"
 
+' === Assignment Tracker ===
+Public Const SHT_ASSIGNMENT_TRACKER As String = "Assignment Tracker"
+Public Const TBL_ASSIGNMENT_TRACKER As String = "tblAssignmentTracker"
+
 ' === Incident Log Column Names (27 columns) ===
 Public Const COL_INCIDENT_ID As String = "IncidentID"
 Public Const COL_TITLE As String = "Title"

@@ -264,6 +264,83 @@ ErrHandler:
 End Function
 
 ' ----------------------------------------------------------------------------
+' UpdateIncidentFields
+' Updates multiple fields for a given incident in a single unprotect/write/protect
+' cycle. Used by assignment (5 fields) and status updates (2-3 fields) to avoid
+' repeated protect/unprotect overhead and ensure a single LastModified timestamp.
+'
+' Parameters:
+'   sIncidentID - The incident ID to update
+'   vFieldNames - Variant array of column name strings (COL_* constants)
+'   vFieldValues - Variant array of new values (same order as vFieldNames)
+'
+' Returns:
+'   True on success, False if not found or on error
+' ----------------------------------------------------------------------------
+Public Function UpdateIncidentFields(ByVal sIncidentID As String, _
+                                      ByRef vFieldNames As Variant, _
+                                      ByRef vFieldValues As Variant) As Boolean
+    On Error GoTo ErrHandler
+
+    Dim tbl As ListObject
+    Set tbl = GetIncidentTable()
+    If tbl Is Nothing Then
+        UpdateIncidentFields = False
+        Exit Function
+    End If
+
+    Dim idCol As Long
+    idCol = ColIdx(tbl, COL_INCIDENT_ID)
+    If idCol = 0 Then
+        UpdateIncidentFields = False
+        Exit Function
+    End If
+
+    ' Find the row
+    Dim i As Long
+    For i = 1 To tbl.ListRows.Count
+        If CStr(tbl.ListRows(i).Range(1, idCol).Value) = sIncidentID Then
+            ' Found -- unprotect once, update all fields, re-protect once
+            modUtilities.UnprotectSheet tbl.Parent
+
+            Dim j As Long
+            For j = LBound(vFieldNames) To UBound(vFieldNames)
+                Dim targetCol As Long
+                targetCol = ColIdx(tbl, CStr(vFieldNames(j)))
+                If targetCol > 0 Then
+                    tbl.ListRows(i).Range(1, targetCol).Value = vFieldValues(j)
+                End If
+            Next j
+
+            ' Update audit fields
+            tbl.ListRows(i).Range(1, ColIdx(tbl, COL_LAST_MODIFIED)).Value = Now
+            tbl.ListRows(i).Range(1, ColIdx(tbl, COL_LAST_MODIFIED_BY)).Value = Application.UserName
+
+            modUtilities.ProtectSheet tbl.Parent
+
+            UpdateIncidentFields = True
+            Exit Function
+        End If
+    Next i
+
+    ' Not found
+    UpdateIncidentFields = False
+    Exit Function
+
+ErrHandler:
+    ' Always re-protect before surfacing the error
+    On Error Resume Next
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Sheets(SHT_INCIDENT_LOG)
+    modUtilities.ProtectSheet ws
+    On Error GoTo 0
+
+    modErrorHandler.HandleError "modDataAccess", "UpdateIncidentFields", _
+                                 Err.Number, Err.Description
+    UpdateIncidentFields = False
+End Function
+
+' ----------------------------------------------------------------------------
 ' GetNextIncidentID
 ' Generates the next sequential incident ID in the format INC-NNNNN.
 ' Scans all existing IDs, finds the maximum numeric portion, and returns

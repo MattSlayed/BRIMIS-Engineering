@@ -42,6 +42,11 @@ Public Sub VerifyWorkbookStructure()
         Debug.Print "VERIFY: Missing sheet - " & SHT_SETTINGS
     End If
 
+    If Not SheetExists(SHT_ASSIGNMENT_TRACKER) Then
+        sMissingItems = sMissingItems & vbCrLf & "  - Sheet: " & SHT_ASSIGNMENT_TRACKER
+        Debug.Print "VERIFY: Missing sheet - " & SHT_ASSIGNMENT_TRACKER
+    End If
+
     ' --- Check required tables ---
     If SheetExists(SHT_INCIDENT_LOG) Then
         If Not TableExists(SHT_INCIDENT_LOG, TBL_INCIDENTS) Then
@@ -71,6 +76,14 @@ Public Sub VerifyWorkbookStructure()
         If Not TableExists(SHT_SETTINGS, TBL_PRIORITY_MATRIX) Then
             sMissingItems = sMissingItems & vbCrLf & "  - Table: " & TBL_PRIORITY_MATRIX
             Debug.Print "VERIFY: Missing table - " & TBL_PRIORITY_MATRIX
+        End If
+    End If
+
+    ' --- Check Assignment Tracker table ---
+    If SheetExists(SHT_ASSIGNMENT_TRACKER) Then
+        If Not TableExists(SHT_ASSIGNMENT_TRACKER, TBL_ASSIGNMENT_TRACKER) Then
+            sMissingItems = sMissingItems & vbCrLf & "  - Table: " & TBL_ASSIGNMENT_TRACKER
+            Debug.Print "VERIFY: Missing table - " & TBL_ASSIGNMENT_TRACKER
         End If
     End If
 
@@ -136,6 +149,16 @@ Public Sub ApplyAllProtection()
         ws.Unprotect Password:=SHEET_PWD
         ws.Protect Password:=SHEET_PWD, _
             UserInterfaceOnly:=True
+    End If
+
+    ' --- Assignment Tracker: VBA-writable, UI-locked ---
+    If SheetExists(SHT_ASSIGNMENT_TRACKER) Then
+        Set ws = ThisWorkbook.Sheets(SHT_ASSIGNMENT_TRACKER)
+        ws.Unprotect Password:=SHEET_PWD
+        ws.Protect Password:=SHEET_PWD, _
+            UserInterfaceOnly:=True, _
+            AllowFiltering:=True, _
+            AllowSorting:=True
     End If
 
     On Error GoTo 0
