@@ -152,11 +152,11 @@ Public Sub InitializeWorkbook()
     ' Step 1: Verify all required sheets and tables exist
     VerifyWorkbookStructure
 
-    ' Step 2: Re-apply protection (UserInterfaceOnly does not persist)
-    ApplyAllProtection
-
-    ' Step 3: Refresh branding (optional -- ensures consistency)
+    ' Step 2: Refresh branding BEFORE protection (formatting fails on protected sheets)
     modFormatting.ApplyAllBranding
+
+    ' Step 3: Re-apply protection (UserInterfaceOnly does not persist)
+    ApplyAllProtection
 
     ' Step 4: Navigate to Dashboard
     If SheetExists(SHT_DASHBOARD) Then
