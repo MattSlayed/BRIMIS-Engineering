@@ -5,15 +5,16 @@ Injects all VBA modules into the BRIMIS IMS workbook using win32com Excel automa
 
 This script:
 1. Opens BRIMIS_IMS.xlsx (or .xlsm if it already exists)
-2. Imports 9 standard .bas modules into the VBA project
+2. Imports 11 standard .bas modules into the VBA project
 3. Writes ThisWorkbook.cls code into the existing ThisWorkbook code module
 4. Creates 3 UserForms programmatically (frmStatusUpdate extended with RCA fields in Phase 4):
    - frmIncidentEntry (Phase 2: 4-page wizard for logging incidents)
    - frmAssignment (Phase 3: assign incidents to team/person)
    - frmStatusUpdate (Phase 3+4: update status with enforced transitions and RCA fields)
-5. Adds 3 Dashboard buttons (Log New Incident, Assign Incident, Update Status)
-6. Adds 1 Refresh Tracker button on the Assignment Tracker sheet
-7. Saves the workbook as BRIMIS_IMS.xlsm (macro-enabled format)
+5. Injects Dashboard sheet event code (Worksheet_Activate for auto-refresh)
+6. Adds 4 Dashboard buttons (Log New Incident, Assign Incident, Update Status, Refresh Dashboard)
+7. Adds 1 Refresh Tracker button on the Assignment Tracker sheet
+8. Saves the workbook as BRIMIS_IMS.xlsm (macro-enabled format)
 
 Prerequisites:
 - Python 3.x with pywin32 (pip install pywin32)
@@ -61,6 +62,8 @@ STANDARD_MODULES = [
     "modIncidentEntry.bas",
     "modAssignment.bas",       # Phase 3
     "modStatusUpdate.bas",     # Phase 3
+    "modSLA.bas",              # Phase 5
+    "modDashboard.bas",        # Phase 5
 ]
 
 # ThisWorkbook is handled specially (code written to existing component)
@@ -1104,16 +1107,18 @@ def add_dashboard_buttons(wb):
 
     Creates BRIMIS-branded rounded rectangle shapes:
     - 'Log New Incident' (Left=30) -> ShowIncidentEntryForm
-    - 'Assign Incident' (Left=270) -> ShowAssignmentForm
-    - 'Update Status' (Left=510) -> ShowStatusUpdateForm
+    - 'Assign Incident' (Left=210) -> ShowAssignmentForm
+    - 'Update Status' (Left=390) -> ShowStatusUpdateForm
+    - 'Refresh Dashboard' (Left=570) -> RefreshDashboard
     """
     dashboard = wb.Sheets("Dashboard")
 
-    # Define all buttons
+    # Define all 4 buttons (Phase 5: added Refresh Dashboard)
     buttons = [
-        {"name": "btnLogIncident",    "caption": "Log New Incident",  "left": 30,  "macro": "ShowIncidentEntryForm"},
-        {"name": "btnAssignIncident", "caption": "Assign Incident",   "left": 270, "macro": "ShowAssignmentForm"},
-        {"name": "btnUpdateStatus",   "caption": "Update Status",     "left": 510, "macro": "ShowStatusUpdateForm"},
+        {"name": "btnLogIncident",       "caption": "Log New Incident",   "left": 30,  "macro": "ShowIncidentEntryForm"},
+        {"name": "btnAssignIncident",    "caption": "Assign Incident",    "left": 210, "macro": "ShowAssignmentForm"},
+        {"name": "btnUpdateStatus",      "caption": "Update Status",      "left": 390, "macro": "ShowStatusUpdateForm"},
+        {"name": "btnRefreshDashboard",  "caption": "Refresh Dashboard",  "left": 570, "macro": "RefreshDashboard"},
     ]
 
     for btn_def in buttons:
@@ -1125,8 +1130,8 @@ def add_dashboard_buttons(wb):
             pass
 
         # msoShapeRoundedRectangle = 5
-        # Top=60 (below header bar), Width=220, Height=50
-        shape = dashboard.Shapes.AddShape(5, btn_def["left"], 60, 220, 50)
+        # Top=48 (row 3 area, above KPI cards), Width=170, Height=40
+        shape = dashboard.Shapes.AddShape(5, btn_def["left"], 48, 170, 40)
         shape.Name = btn_def["name"]
 
         # BRIMIS Red fill
@@ -1180,6 +1185,42 @@ def add_tracker_refresh_button(wb):
     shape.OnAction = "RefreshAssignmentTracker"
 
     print("  Created Tracker button: btnRefreshTracker -> RefreshAssignmentTracker")
+    return True
+
+
+def inject_dashboard_sheet_code(wb):
+    """Inject Worksheet_Activate event into the Dashboard sheet's code module.
+
+    This makes the Dashboard auto-refresh when the user clicks its tab.
+    Worksheet events MUST be in the sheet's code module (not a standard module).
+
+    Returns True on success.
+    """
+    dashboard_sheet = wb.Sheets("Dashboard")
+    code_name = dashboard_sheet.CodeName  # e.g., "Sheet1"
+
+    sheet_comp = wb.VBProject.VBComponents(code_name)
+    code_module = sheet_comp.CodeModule
+
+    # Clear any existing code in the sheet module
+    if code_module.CountOfLines > 0:
+        code_module.DeleteLines(1, code_module.CountOfLines)
+
+    sheet_code = (
+        "Option Explicit\n"
+        "\n"
+        "Private Sub Worksheet_Activate()\n"
+        "    On Error GoTo ErrHandler\n"
+        "    modDashboard.RefreshDashboard\n"
+        "    Exit Sub\n"
+        "ErrHandler:\n"
+        "    modErrorHandler.HandleError \"Dashboard\", \"Worksheet_Activate\", _\n"
+        "                                 Err.Number, Err.Description\n"
+        "End Sub\n"
+    )
+
+    code_module.AddFromString(sheet_code)
+    print(f"  Injected Worksheet_Activate into {code_name} (Dashboard)")
     return True
 
 
@@ -1272,7 +1313,16 @@ def main():
         except Exception as e:
             print(f"  ERROR creating status update form: {e}")
 
-        # Add Dashboard buttons (Phase 2 + Phase 3)
+        # Inject Dashboard sheet event code (Phase 5)
+        print()
+        print("Injecting Dashboard sheet event code...")
+        dashboard_sheet_ok = False
+        try:
+            dashboard_sheet_ok = inject_dashboard_sheet_code(wb)
+        except Exception as e:
+            print(f"  ERROR injecting dashboard sheet code: {e}")
+
+        # Add Dashboard buttons (Phase 2 + Phase 3 + Phase 5)
         print()
         print("Adding Dashboard action buttons...")
         buttons_ok = False
@@ -1309,13 +1359,15 @@ def main():
         print(f"  Incident entry form: {'Yes' if form_incident_ok else 'No'}")
         print(f"  Assignment form: {'Yes' if form_assignment_ok else 'No'}")
         print(f"  Status update form: {'Yes' if form_status_ok else 'No'}")
+        print(f"  Dashboard sheet code: {'Yes' if dashboard_sheet_ok else 'No'}")
         print(f"  Dashboard buttons: {'Yes' if buttons_ok else 'No'}")
         print(f"  Tracker refresh button: {'Yes' if tracker_btn_ok else 'No'}")
         total_ok = imported_count + (1 if thisworkbook_ok else 0) + \
                    (1 if form_incident_ok else 0) + \
                    (1 if form_assignment_ok else 0) + \
-                   (1 if form_status_ok else 0)
-        total_expected = len(STANDARD_MODULES) + 4  # modules + ThisWorkbook + 3 UserForms
+                   (1 if form_status_ok else 0) + \
+                   (1 if dashboard_sheet_ok else 0)
+        total_expected = len(STANDARD_MODULES) + 5  # modules + ThisWorkbook + 3 UserForms + Dashboard sheet code
         print(f"  Total VBA components: {total_ok}/{total_expected}")
         print(f"  Output file: {XLSM_PATH}")
 
@@ -1325,10 +1377,10 @@ def main():
 
         all_ok = (imported_count == len(STANDARD_MODULES) and thisworkbook_ok
                   and form_incident_ok and form_assignment_ok and form_status_ok
-                  and buttons_ok and tracker_btn_ok)
+                  and dashboard_sheet_ok and buttons_ok and tracker_btn_ok)
         print()
         if all_ok:
-            print("SUCCESS: All VBA modules, UserForms, buttons, and tracker injected.")
+            print("SUCCESS: All VBA modules, UserForms, Dashboard sheet code, buttons, and tracker injected.")
         else:
             print("WARNING: Some components may not have been created. Check output above.")
 

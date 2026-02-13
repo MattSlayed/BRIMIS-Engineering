@@ -34,12 +34,22 @@ BRIMIS_GRAY = "32373C"
 FILL_DARK = PatternFill(start_color=BRIMIS_DARK, end_color=BRIMIS_DARK, fill_type="solid")
 FILL_RED = PatternFill(start_color=BRIMIS_RED, end_color=BRIMIS_RED, fill_type="solid")
 FILL_WHITE = PatternFill(start_color=BRIMIS_WHITE, end_color=BRIMIS_WHITE, fill_type="solid")
+FILL_ORANGE = PatternFill(start_color="FF8C00", end_color="FF8C00", fill_type="solid")
+FILL_GOLD = PatternFill(start_color="FFD700", end_color="FFD700", fill_type="solid")
+FILL_GRAY = PatternFill(start_color=BRIMIS_GRAY, end_color=BRIMIS_GRAY, fill_type="solid")
 
 FONT_HEADER_LARGE = Font(name="Calibri", size=16, bold=True, color=BRIMIS_WHITE)
 FONT_HEADER_MEDIUM = Font(name="Calibri", size=14, bold=True, color=BRIMIS_WHITE)
 FONT_TABLE_HEADER = Font(name="Calibri", size=11, bold=True, color=BRIMIS_WHITE)
 FONT_INSTRUCTION = Font(name="Calibri", size=11, italic=True, color="808080")
 FONT_LABEL_BOLD = Font(name="Calibri", size=11, bold=True, color=BRIMIS_DARK)
+FONT_KPI_VALUE = Font(name="Calibri", size=28, bold=True, color=BRIMIS_DARK)
+FONT_KPI_LABEL = Font(name="Calibri", size=10, bold=True, color=BRIMIS_GRAY)
+FONT_SECTION_HEADER = Font(name="Calibri", size=12, bold=True, color=BRIMIS_DARK)
+FONT_SUBSECTION = Font(name="Calibri", size=11, bold=True, color=BRIMIS_DARK)
+FONT_SLA_HEADER = Font(name="Calibri", size=12, bold=True, color=BRIMIS_WHITE)
+FONT_SLA_COL_HEADER = Font(name="Calibri", size=10, bold=True, color=BRIMIS_WHITE)
+FONT_REFRESH_LABEL = Font(name="Calibri", size=9, italic=True, color="808080")
 
 # Standard table style used as a base (row stripes)
 TABLE_STYLE = TableStyleInfo(
@@ -115,8 +125,10 @@ def create_workbook():
 # Dashboard Setup
 # =============================================================================
 def _setup_dashboard(ws):
-    """Configure the Dashboard sheet with header bar and placeholder content."""
-    # Row 1: Merged header bar A1:Z1
+    """Configure the Dashboard sheet with KPI cards, breakdowns, and SLA Monitor layout."""
+    CENTER = Alignment(horizontal="center", vertical="center")
+
+    # ---- Row 1: Merged header bar A1:Z1 ----
     ws.merge_cells("A1:Z1")
     cell = ws["A1"]
     cell.value = "BRIMIS Incident Management System"
@@ -125,20 +137,118 @@ def _setup_dashboard(ws):
     cell.alignment = Alignment(horizontal="left", vertical="center")
     ws.row_dimensions[1].height = 36
 
-    # Apply dark fill to all cells in the merged range
     for col in range(1, 27):  # A to Z
-        c = ws.cell(row=1, column=col)
-        c.fill = FILL_DARK
+        ws.cell(row=1, column=col).fill = FILL_DARK
 
-    # Row 3: Placeholder text
-    ws["A3"].value = "Dashboard will be populated in Phase 5"
-    ws["A3"].font = FONT_INSTRUCTION
+    # ---- Row 5: KPI section header ----
+    ws.merge_cells("B5:P5")
+    cell = ws["B5"]
+    cell.value = "Key Performance Indicators"
+    cell.font = FONT_SECTION_HEADER
+
+    # ---- Row 6: KPI labels at B, F, J, N ----
+    kpi_labels = [
+        ("B6", "Total Open"),
+        ("F6", "Overdue"),
+        ("J6", "Avg Resolution (days)"),
+        ("N6", "Total Closed"),
+    ]
+    for ref, label in kpi_labels:
+        c = ws[ref]
+        c.value = label
+        c.font = FONT_KPI_LABEL
+        c.alignment = CENTER
+
+    # ---- Row 7: KPI value placeholders (0) at B, F, J, N ----
+    for ref in ["B7", "F7", "J7", "N7"]:
+        c = ws[ref]
+        c.value = 0
+        c.font = FONT_KPI_VALUE
+        c.alignment = CENTER
+
+    # ---- Row 9: Subsection headers ----
+    ws["B9"].value = "By Priority"
+    ws["B9"].font = FONT_SUBSECTION
+    ws["H9"].value = "By Category"
+    ws["H9"].font = FONT_SUBSECTION
+
+    # ---- Rows 10-13: Priority breakdown (B=label, C=value) ----
+    priority_rows = [
+        (10, "P1", FILL_RED, BRIMIS_WHITE),
+        (11, "P2", FILL_ORANGE, BRIMIS_WHITE),
+        (12, "P3", FILL_GOLD, BRIMIS_DARK),
+        (13, "P4", FILL_GRAY, BRIMIS_WHITE),
+    ]
+    for row, label, fill, font_color in priority_rows:
+        lbl_cell = ws.cell(row=row, column=2)  # B
+        lbl_cell.value = label
+        lbl_cell.fill = fill
+        lbl_cell.font = Font(name="Calibri", size=11, bold=True, color=font_color)
+        lbl_cell.alignment = CENTER
+
+        val_cell = ws.cell(row=row, column=3)  # C
+        val_cell.value = 0
+        val_cell.font = Font(name="Calibri", size=11, bold=True, color=BRIMIS_DARK)
+        val_cell.alignment = CENTER
+
+    # ---- Rows 10-12: Category breakdown (H=label, I=value) ----
+    category_rows = [
+        (10, "Mechanical"),
+        (11, "Electrical"),
+        (12, "Safety/HSE"),
+    ]
+    for row, label in category_rows:
+        lbl_cell = ws.cell(row=row, column=8)  # H
+        lbl_cell.value = label
+        lbl_cell.font = Font(name="Calibri", size=11, color=BRIMIS_DARK)
+
+        val_cell = ws.cell(row=row, column=9)  # I
+        val_cell.value = 0
+        val_cell.font = Font(name="Calibri", size=11, color=BRIMIS_DARK)
+        val_cell.alignment = CENTER
+
+    # ---- Row 16: SLA Monitor header ----
+    ws.merge_cells("B16:H16")
+    cell = ws["B16"]
+    cell.value = "SLA Monitor - Open Incidents"
+    cell.fill = FILL_RED
+    cell.font = FONT_SLA_HEADER
+    cell.alignment = CENTER
+    # Fill all cells in merged range
+    for col in range(2, 9):  # B through H
+        ws.cell(row=16, column=col).fill = FILL_RED
+
+    # ---- Row 17: SLA Monitor column headers ----
+    sla_col_headers = ["ID", "Title", "Priority", "Status",
+                       "Response SLA", "Resolution SLA", "Time Remaining"]
+    for idx, header in enumerate(sla_col_headers, start=2):  # B=2 through H=8
+        c = ws.cell(row=17, column=idx)
+        c.value = header
+        c.fill = FILL_GRAY
+        c.font = FONT_SLA_COL_HEADER
+        c.alignment = CENTER
+
+    # Rows 18-37: empty (VBA populates SLA Monitor rows, up to 20 rows)
+
+    # ---- Row 39: Last Refreshed label ----
+    ws["B39"].value = "Last Refreshed:"
+    ws["B39"].font = FONT_REFRESH_LABEL
+
+    # ---- Column widths ----
+    ws.column_dimensions["A"].width = 2    # narrow gutter
+    ws.column_dimensions["B"].width = 18   # ID / labels
+    ws.column_dimensions["C"].width = 35   # Title / values
+    ws.column_dimensions["D"].width = 12   # Priority
+    ws.column_dimensions["E"].width = 14   # Status
+    ws.column_dimensions["F"].width = 18   # Response SLA / KPI
+    ws.column_dimensions["G"].width = 18   # Resolution SLA
+    ws.column_dimensions["H"].width = 18   # Time Remaining / category labels
+    ws.column_dimensions["I"].width = 12   # category values
+    for letter in ["J", "K", "L", "M", "N"]:
+        ws.column_dimensions[letter].width = 14  # KPI columns
 
     # Freeze panes at row 2
     ws.freeze_panes = "A2"
-
-    # Column A width
-    ws.column_dimensions["A"].width = 30
 
 
 # =============================================================================
