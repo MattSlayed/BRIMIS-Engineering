@@ -201,6 +201,82 @@ ErrHandler:
 End Sub
 
 ' ----------------------------------------------------------------------------
+' ApplySLAConditionalFormatting
+' Applies conditional formatting rules for SLA status values on the
+' SLAResponseStatus and SLAResolutionStatus columns of tblIncidents.
+' Colors: green for On Track/Met, amber for At Risk, red for Overdue/Breached.
+' Clears any existing format conditions on the ranges first.
+' ----------------------------------------------------------------------------
+Public Sub ApplySLAConditionalFormatting()
+    On Error GoTo ErrHandler
+
+    Dim tbl As ListObject
+    Set tbl = ThisWorkbook.Sheets(SHT_INCIDENT_LOG).ListObjects(TBL_INCIDENTS)
+
+    ' Guard: if table has no data rows, exit
+    If tbl.DataBodyRange Is Nothing Then Exit Sub
+
+    ' Get SLA column ranges
+    Dim rngResponse As Range, rngResolution As Range
+    Set rngResponse = tbl.ListColumns(COL_SLA_RESPONSE).DataBodyRange
+    Set rngResolution = tbl.ListColumns(COL_SLA_RESOLUTION).DataBodyRange
+
+    ' Apply formatting to Response SLA column
+    ApplySLARulesToRange rngResponse
+
+    ' Apply formatting to Resolution SLA column
+    ApplySLARulesToRange rngResolution
+
+    Exit Sub
+
+ErrHandler:
+    modErrorHandler.HandleError "modFormatting", "ApplySLAConditionalFormatting", _
+                                 Err.Number, Err.Description
+End Sub
+
+' ----------------------------------------------------------------------------
+' ApplySLARulesToRange (Private Helper)
+' Applies the 5 SLA conditional formatting rules to a given range.
+' Follows same pattern as ApplyPriorityConditionalFormatting.
+' ----------------------------------------------------------------------------
+Private Sub ApplySLARulesToRange(rng As Range)
+    ' Clear existing rules
+    rng.FormatConditions.Delete
+
+    ' On Track: green background, dark green text
+    With rng.FormatConditions.Add(xlCellValue, xlEqual, "=""On Track""")
+        .Interior.Color = CLR_SLA_GREEN
+        .Font.Color = CLR_SLA_GREEN_TEXT
+    End With
+
+    ' Met: green background, dark green text
+    With rng.FormatConditions.Add(xlCellValue, xlEqual, "=""Met""")
+        .Interior.Color = CLR_SLA_GREEN
+        .Font.Color = CLR_SLA_GREEN_TEXT
+    End With
+
+    ' At Risk: amber background, dark amber text
+    With rng.FormatConditions.Add(xlCellValue, xlEqual, "=""At Risk""")
+        .Interior.Color = CLR_SLA_AMBER
+        .Font.Color = CLR_SLA_AMBER_TEXT
+    End With
+
+    ' Overdue: red background, white text, bold
+    With rng.FormatConditions.Add(xlCellValue, xlEqual, "=""Overdue""")
+        .Interior.Color = CLR_BRIMIS_RED
+        .Font.Color = CLR_BRIMIS_WHITE
+        .Font.Bold = True
+    End With
+
+    ' Breached: red background, white text, bold
+    With rng.FormatConditions.Add(xlCellValue, xlEqual, "=""Breached""")
+        .Interior.Color = CLR_BRIMIS_RED
+        .Font.Color = CLR_BRIMIS_WHITE
+        .Font.Bold = True
+    End With
+End Sub
+
+' ----------------------------------------------------------------------------
 ' ApplyAllBranding
 ' Convenience wrapper that applies BRIMIS branding to all visible worksheets
 ' and all ListObjects found on each sheet.

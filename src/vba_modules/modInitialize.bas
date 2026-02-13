@@ -201,6 +201,9 @@ Public Sub InitializeWorkbook()
     ' Step 2: Refresh branding BEFORE protection (formatting fails on protected sheets)
     modFormatting.ApplyAllBranding
 
+    ' Step 2.5: Refresh dashboard data (SLA recalc + KPI update + conditional formatting)
+    modDashboard.RefreshDashboard
+
     ' Step 3: Re-apply protection (UserInterfaceOnly does not persist)
     ApplyAllProtection
 
