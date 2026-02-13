@@ -58,6 +58,36 @@ ErrHandler:
 End Function
 
 ' ----------------------------------------------------------------------------
+' GetIncidentColIdx
+' Public wrapper that returns the 1-based column index for a named column
+' in tblIncidents. Used by modReports to decode ReadIncident() result arrays.
+'
+' Parameters:
+'   colName  - The column header name (use COL_* constants)
+'
+' Returns:
+'   1-based column index, or 0 if not found / table missing
+' ----------------------------------------------------------------------------
+Public Function GetIncidentColIdx(ByVal colName As String) As Long
+    On Error GoTo ErrHandler
+
+    Dim tbl As ListObject
+    Set tbl = GetIncidentTable()
+    If tbl Is Nothing Then
+        GetIncidentColIdx = 0
+        Exit Function
+    End If
+
+    GetIncidentColIdx = ColIdx(tbl, colName)
+    Exit Function
+
+ErrHandler:
+    modErrorHandler.HandleError "modDataAccess", "GetIncidentColIdx", _
+                                 Err.Number, Err.Description
+    GetIncidentColIdx = 0
+End Function
+
+' ----------------------------------------------------------------------------
 ' WriteIncident
 ' Adds a new incident row to tblIncidents with all required fields populated.
 ' Automatically sets Status=Open, ReportedDate=Now, LastModified=Now,

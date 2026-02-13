@@ -43,6 +43,9 @@ Public Const COL_RCA_LAST_MODIFIED As String = "LastModified"
 
 Public Const RCA_ID_PREFIX As String = "RCA-"
 
+' === Report Sheet ===
+Public Const SHT_REPORT As String = "IncidentReport"
+
 ' === Incident Log Column Names (27 columns) ===
 Public Const COL_INCIDENT_ID As String = "IncidentID"
 Public Const COL_TITLE As String = "Title"

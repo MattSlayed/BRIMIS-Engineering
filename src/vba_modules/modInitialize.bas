@@ -52,6 +52,12 @@ Public Sub VerifyWorkbookStructure()
         Debug.Print "VERIFY: Missing sheet - " & SHT_RCA_LOG
     End If
 
+    ' Note: IncidentReport is VeryHidden, still check existence
+    If Not SheetExists(SHT_REPORT) Then
+        sMissingItems = sMissingItems & vbCrLf & "  - Sheet: " & SHT_REPORT
+        Debug.Print "VERIFY: Missing sheet - " & SHT_REPORT
+    End If
+
     ' --- Check required tables ---
     If SheetExists(SHT_INCIDENT_LOG) Then
         If Not TableExists(SHT_INCIDENT_LOG, TBL_INCIDENTS) Then
@@ -182,6 +188,14 @@ Public Sub ApplyAllProtection()
             UserInterfaceOnly:=True, _
             AllowFiltering:=True, _
             AllowSorting:=True
+    End If
+
+    ' --- IncidentReport: VBA-writable template, UI-locked (VeryHidden) ---
+    If SheetExists(SHT_REPORT) Then
+        Set ws = ThisWorkbook.Sheets(SHT_REPORT)
+        ws.Unprotect Password:=SHEET_PWD
+        ws.Protect Password:=SHEET_PWD, _
+            UserInterfaceOnly:=True
     End If
 
     On Error GoTo 0
