@@ -103,3 +103,50 @@ Public Const MAX_BACKUPS As Long = 30
 Public Const SHEET_PWD As String = "BRIMIS2026"
 Public Const APP_TITLE As String = "BRIMIS Incident Management System"
 Public Const ID_PREFIX As String = "INC-"
+
+' === SLA Status Values ===
+Public Const SLA_STATUS_ON_TRACK As String = "On Track"
+Public Const SLA_STATUS_AT_RISK As String = "At Risk"
+Public Const SLA_STATUS_OVERDUE As String = "Overdue"
+Public Const SLA_STATUS_MET As String = "Met"
+Public Const SLA_STATUS_BREACHED As String = "Breached"
+
+' === SLA Threshold ===
+Public Const SLA_AMBER_THRESHOLD_PCT As Double = 0.75  ' Amber when 75% of time elapsed
+
+' === SLA Conditional Formatting Colors (Long = R + G*256 + B*65536) ===
+Public Const CLR_SLA_GREEN As Long = 13561798   ' RGB(198, 239, 206) = 198 + (239*256) + (206*65536)
+Public Const CLR_SLA_GREEN_TEXT As Long = 24832  ' RGB(0, 97, 0) dark green text
+Public Const CLR_SLA_AMBER As Long = 10284031   ' RGB(255, 235, 156) = 255 + (235*256) + (156*65536)
+Public Const CLR_SLA_AMBER_TEXT As Long = 32896  ' RGB(128, 128, 0) dark amber text
+
+' === Dashboard Layout Constants ===
+Public Const DASH_KPI_SECTION_ROW As Long = 5
+Public Const DASH_KPI_LABEL_ROW As Long = 6
+Public Const DASH_KPI_VALUE_ROW As Long = 7
+Public Const DASH_KPI_COL_OPEN As Long = 2       ' Column B
+Public Const DASH_KPI_COL_OVERDUE As Long = 6    ' Column F
+Public Const DASH_KPI_COL_AVGRES As Long = 10    ' Column J
+Public Const DASH_KPI_COL_CLOSED As Long = 14    ' Column N
+
+Public Const DASH_BREAKDOWN_HEADER_ROW As Long = 9
+Public Const DASH_PRIORITY_START_ROW As Long = 10
+Public Const DASH_PRIORITY_COL As Long = 2       ' Column B (label)
+Public Const DASH_PRIORITY_VAL_COL As Long = 3   ' Column C (value)
+Public Const DASH_CATEGORY_START_ROW As Long = 10
+Public Const DASH_CATEGORY_COL As Long = 8       ' Column H (label)
+Public Const DASH_CATEGORY_VAL_COL As Long = 9   ' Column I (value)
+
+Public Const DASH_SLA_HEADER_ROW As Long = 16
+Public Const DASH_SLA_COL_HEADERS_ROW As Long = 17
+Public Const DASH_SLA_DATA_START_ROW As Long = 18
+Public Const DASH_SLA_MAX_ROWS As Long = 20      ' Max incidents shown in SLA monitor
+Public Const DASH_SLA_COL_ID As Long = 2         ' Column B
+Public Const DASH_SLA_COL_TITLE As Long = 3
+Public Const DASH_SLA_COL_PRIORITY As Long = 4
+Public Const DASH_SLA_COL_STATUS As Long = 5
+Public Const DASH_SLA_COL_RESPONSE As Long = 6
+Public Const DASH_SLA_COL_RESOLUTION As Long = 7
+Public Const DASH_SLA_COL_TIMEREM As Long = 8
+
+Public Const DASH_REFRESH_ROW As Long = 39
