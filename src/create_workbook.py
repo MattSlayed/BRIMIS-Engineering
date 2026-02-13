@@ -19,6 +19,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.utils import get_column_letter
+import openpyxl.worksheet.page
 
 # =============================================================================
 # BRIMIS Brand Colors (hex codes for openpyxl PatternFill)
@@ -111,7 +112,14 @@ def create_workbook():
     _setup_rca_log(ws_rca_log)
 
     # =========================================================================
-    # 7. Save as .xlsx (VBA will be injected separately to produce .xlsm)
+    # 7. IncidentReport Sheet (hidden report template)
+    # =========================================================================
+    ws_report = wb.create_sheet("IncidentReport")
+    _setup_incident_report(ws_report)
+    ws_report.sheet_state = 'veryHidden'  # xlSheetVeryHidden equivalent in openpyxl
+
+    # =========================================================================
+    # 8. Save as .xlsx (VBA will be injected separately to produce .xlsm)
     # =========================================================================
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     output_path = os.path.join(project_root, "BRIMIS_IMS.xlsx")
@@ -579,6 +587,151 @@ def _setup_rca_log(ws):
 
 
 # =============================================================================
+# IncidentReport Template Sheet Setup
+# =============================================================================
+def _write_report_section_header(ws, row, text):
+    """Write a section header bar across A:H on the given row."""
+    ws.merge_cells(f'A{row}:H{row}')
+    cell = ws[f'A{row}']
+    cell.value = text
+    cell.font = Font(name="Calibri", size=11, bold=True, color=BRIMIS_WHITE)
+    cell.fill = FILL_DARK
+    cell.alignment = Alignment(horizontal='left', vertical='center')
+
+
+def _setup_incident_report(ws):
+    """Set up the IncidentReport template sheet (VeryHidden).
+
+    This sheet is populated by modReports.GenerateIncidentReport at runtime.
+    The layout provides section headers, label cells, and value cells that
+    VBA writes into. The logo is embedded once here and persists.
+    """
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    # Column widths
+    ws.column_dimensions['A'].width = 18   # Labels
+    ws.column_dimensions['B'].width = 22   # Values
+    ws.column_dimensions['C'].width = 5    # Spacer
+    ws.column_dimensions['D'].width = 18   # Labels
+    ws.column_dimensions['E'].width = 22   # Values
+    ws.column_dimensions['F'].width = 5    # Spacer
+    ws.column_dimensions['G'].width = 15   # Extra
+    ws.column_dimensions['H'].width = 15   # Extra
+
+    # --- Logo ---
+    # Try to embed BRIMIS logo if it exists
+    logo_path = os.path.join(project_root, "src", "assets", "brimis_logo.png")
+    if os.path.exists(logo_path):
+        from openpyxl.drawing.image import Image
+        img = Image(logo_path)
+        img.width = 160
+        img.height = 50
+        ws.add_image(img, "A1")
+        print(f"  Embedded logo from {logo_path}")
+    else:
+        # Fallback: text-only branding
+        ws['A1'] = "BRIMIS"
+        ws['A1'].font = Font(name="Calibri", size=16, bold=True, color=BRIMIS_RED)
+        print(f"  Logo not found at {logo_path}, using text fallback")
+
+    # --- Report Title ---
+    ws['D1'] = "INCIDENT REPORT"
+    ws['D1'].font = Font(name="Calibri", size=18, bold=True, color=BRIMIS_RED)
+    ws['G1'] = "Report Date:"
+    ws['G1'].font = Font(name="Calibri", size=9, italic=True, color="808080")
+
+    ws['D2'] = "BRIMIS Engineering"
+    ws['D2'].font = Font(name="Calibri", size=11, color=BRIMIS_GRAY)
+
+    # --- Section: INCIDENT OVERVIEW (Row 4) ---
+    _write_report_section_header(ws, 4, "INCIDENT OVERVIEW")
+
+    # Labels for overview section
+    for row, col, label in [
+        (5, 'A', 'Incident ID:'), (5, 'D', 'Status:'),
+        (6, 'A', 'Title:'),
+        (7, 'A', 'Priority:'), (7, 'D', 'Category:'),
+        (8, 'A', 'Subcategory:'),
+    ]:
+        ws[f'{col}{row}'] = label
+        ws[f'{col}{row}'].font = Font(name="Calibri", size=10, bold=True, color=BRIMIS_GRAY)
+
+    # Merge title value cells B6:H6
+    ws.merge_cells('B6:H6')
+    ws['B6'].alignment = Alignment(wrap_text=True, vertical='top')
+
+    # --- Section: DESCRIPTION (Row 10) ---
+    _write_report_section_header(ws, 10, "DESCRIPTION")
+
+    # Merge description area A11:H14
+    ws.merge_cells('A11:H14')
+    ws['A11'].alignment = Alignment(wrap_text=True, vertical='top')
+
+    # --- Section: TIMELINE (Row 16) ---
+    _write_report_section_header(ws, 16, "TIMELINE")
+
+    for row, col, label in [
+        (17, 'A', 'Reported:'), (17, 'D', 'By:'),
+        (18, 'A', 'Assigned:'), (18, 'D', 'To:'),
+        (19, 'A', 'Response:'),
+        (20, 'A', 'Resolution:'),
+        (21, 'A', 'Closed:'),
+    ]:
+        ws[f'{col}{row}'] = label
+        ws[f'{col}{row}'].font = Font(name="Calibri", size=10, bold=True, color=BRIMIS_GRAY)
+
+    # --- Section: ASSIGNMENT (Row 23) ---
+    _write_report_section_header(ws, 23, "ASSIGNMENT")
+
+    for row, col, label in [
+        (24, 'A', 'Team:'), (24, 'D', 'Assigned To:'),
+        (25, 'A', 'Assigned Date:'), (25, 'D', 'Assigned By:'),
+    ]:
+        ws[f'{col}{row}'] = label
+        ws[f'{col}{row}'].font = Font(name="Calibri", size=10, bold=True, color=BRIMIS_GRAY)
+
+    # --- Section: RESOLUTION & RCA (Row 27) ---
+    _write_report_section_header(ws, 27, "RESOLUTION & ROOT CAUSE ANALYSIS")
+
+    for row, col, label in [
+        (28, 'A', 'Root Cause:'),
+        (29, 'A', 'Corrective Action:'),
+        (30, 'A', 'Preventive Action:'),
+        (31, 'A', 'Resolution Notes:'),
+    ]:
+        ws[f'{col}{row}'] = label
+        ws[f'{col}{row}'].font = Font(name="Calibri", size=10, bold=True, color=BRIMIS_GRAY)
+
+    # Merge value cells for RCA fields
+    for row in [28, 29, 30, 31]:
+        ws.merge_cells(f'B{row}:H{row}')
+        ws[f'B{row}'].alignment = Alignment(wrap_text=True, vertical='top')
+
+    # --- Section: SLA PERFORMANCE (Row 33) ---
+    _write_report_section_header(ws, 33, "SLA PERFORMANCE")
+
+    for row, col, label in [
+        (34, 'A', 'Response SLA:'), (34, 'D', 'Resolution SLA:'),
+    ]:
+        ws[f'{col}{row}'] = label
+        ws[f'{col}{row}'].font = Font(name="Calibri", size=10, bold=True, color=BRIMIS_GRAY)
+
+    # --- Print setup ---
+    ws.page_setup.orientation = 'portrait'
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.page_setup.fitToPage = True
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 1
+    ws.print_area = 'A1:H35'
+    ws.page_margins = openpyxl.worksheet.page.PageMargins(
+        left=0.5, right=0.5, top=0.75, bottom=0.5,
+        header=0.3, footer=0.3
+    )
+
+    print("  IncidentReport template sheet created (VeryHidden)")
+
+
+# =============================================================================
 # Helper Functions
 # =============================================================================
 def _write_table_data(ws, start_row, start_col, headers, data):
@@ -618,7 +771,7 @@ def _create_table(ws, table_name, start_ref, end_ref, headers):
 if __name__ == "__main__":
     output = create_workbook()
     print(f"\nBRIMIS IMS workbook generated successfully.")
-    print(f"  Sheets: Dashboard, Incident Log, Settings, Assignment Tracker, RCA Log")
+    print(f"  Sheets: Dashboard, Incident Log, Settings, Assignment Tracker, RCA Log, IncidentReport (VeryHidden)")
     print(f"  Tables: tblTeams, tblPersonnel, tblCategories, tblSLAThresholds, tblPriorityMatrix, tblIncidents, tblAssignmentTracker, tblRCALog")
     print(f"  Output: {output}")
     print(f"  Note: Saved as .xlsx -- VBA injection will convert to .xlsm")

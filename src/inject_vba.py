@@ -5,14 +5,15 @@ Injects all VBA modules into the BRIMIS IMS workbook using win32com Excel automa
 
 This script:
 1. Opens BRIMIS_IMS.xlsx (or .xlsm if it already exists)
-2. Imports 11 standard .bas modules into the VBA project
+2. Imports 13 standard .bas modules into the VBA project
 3. Writes ThisWorkbook.cls code into the existing ThisWorkbook code module
-4. Creates 3 UserForms programmatically (frmStatusUpdate extended with RCA fields in Phase 4):
+4. Creates 4 UserForms programmatically:
    - frmIncidentEntry (Phase 2: 4-page wizard for logging incidents)
    - frmAssignment (Phase 3: assign incidents to team/person)
    - frmStatusUpdate (Phase 3+4: update status with enforced transitions and RCA fields)
+   - frmSearch (Phase 6: multi-criteria incident search with detail view and report generation)
 5. Injects Dashboard sheet event code (Worksheet_Activate for auto-refresh)
-6. Adds 4 Dashboard buttons (Log New Incident, Assign Incident, Update Status, Refresh Dashboard)
+6. Adds 5 Dashboard buttons (Log, Assign, Update Status, Refresh Dashboard, Search Incidents)
 7. Adds 1 Refresh Tracker button on the Assignment Tracker sheet
 8. Saves the workbook as BRIMIS_IMS.xlsm (macro-enabled format)
 
@@ -64,6 +65,8 @@ STANDARD_MODULES = [
     "modStatusUpdate.bas",     # Phase 3
     "modSLA.bas",              # Phase 5
     "modDashboard.bas",        # Phase 5
+    "modSearch.bas",           # Phase 6
+    "modReports.bas",          # Phase 6
 ]
 
 # ThisWorkbook is handled specially (code written to existing component)
@@ -73,6 +76,7 @@ THISWORKBOOK_FILE = "ThisWorkbook.cls"
 FORM_CODE_FILE = "frmIncidentEntry.bas"
 ASSIGNMENT_FORM_CODE_FILE = "frmAssignment.bas"       # Phase 3
 STATUS_UPDATE_FORM_CODE_FILE = "frmStatusUpdate.bas"   # Phase 3
+SEARCH_FORM_CODE_FILE = "frmSearch.bas"                 # Phase 6
 
 # Excel file format constants
 XL_OPEN_XML_WORKBOOK_MACRO_ENABLED = 52  # .xlsm
@@ -1102,23 +1106,209 @@ def create_status_update_form(vb_project):
     return True
 
 
+def create_search_form(vb_project):
+    """Create the frmSearch UserForm programmatically.
+
+    Layout: Search criteria at top, multi-column ListBox for results,
+    detail labels below, action buttons at bottom.
+    Form dimensions: Width=640, Height=560
+    """
+    form_name = "frmSearch"
+
+    # Check and remove existing form (idempotency guard)
+    try:
+        existing = vb_project.VBComponents(form_name)
+        vb_project.VBComponents.Remove(existing)
+        print(f"  Removed existing form: {form_name}")
+    except com_error:
+        pass
+
+    # Create new UserForm
+    print(f"  Creating UserForm: {form_name}")
+    form_comp = vb_project.VBComponents.Add(VBEXT_CT_MSFORM)  # 3
+    form_comp.Properties("Name").Value = form_name
+    form_comp.Properties("Width").Value = 640
+    form_comp.Properties("Height").Value = 560
+    form_comp.Properties("Caption").Value = "BRIMIS - Search Incidents"
+    form_comp.Properties("BackColor").Value = 16777215  # White
+
+    designer = form_comp.Designer
+
+    # ---- Title Label ----
+    ctrl = designer.Controls.Add("Forms.Label.1", "lblSearchTitle", True)
+    ctrl.Caption = "Search Incidents"
+    ctrl.Left = 20; ctrl.Top = 10; ctrl.Width = 300; ctrl.Height = 20
+    ctrl.Font.Size = 14; ctrl.Font.Bold = True
+    ctrl.ForeColor = 2372078  # CLR_BRIMIS_RED
+
+    # ---- Row 1: ID and Title ----
+    y = 40
+
+    ctrl = designer.Controls.Add("Forms.Label.1", "lblID", True)
+    ctrl.Caption = "ID:"; ctrl.Left = 20; ctrl.Top = y; ctrl.Width = 25; ctrl.Height = 16
+
+    ctrl = designer.Controls.Add("Forms.TextBox.1", "txtSearchID", True)
+    ctrl.Left = 50; ctrl.Top = y; ctrl.Width = 120; ctrl.Height = 20
+
+    ctrl = designer.Controls.Add("Forms.Label.1", "lblTitle", True)
+    ctrl.Caption = "Title:"; ctrl.Left = 190; ctrl.Top = y; ctrl.Width = 35; ctrl.Height = 16
+
+    ctrl = designer.Controls.Add("Forms.TextBox.1", "txtSearchTitle", True)
+    ctrl.Left = 230; ctrl.Top = y; ctrl.Width = 190; ctrl.Height = 20
+
+    # ---- Row 2: Status and Priority ----
+    y = 65
+
+    ctrl = designer.Controls.Add("Forms.Label.1", "lblStatus", True)
+    ctrl.Caption = "Status:"; ctrl.Left = 20; ctrl.Top = y; ctrl.Width = 40; ctrl.Height = 16
+
+    ctrl = designer.Controls.Add("Forms.ComboBox.1", "cboStatus", True)
+    ctrl.Left = 65; ctrl.Top = y; ctrl.Width = 130; ctrl.Height = 20
+    ctrl.Style = 2  # fmStyleDropDownList
+
+    ctrl = designer.Controls.Add("Forms.Label.1", "lblPriority", True)
+    ctrl.Caption = "Priority:"; ctrl.Left = 220; ctrl.Top = y; ctrl.Width = 45; ctrl.Height = 16
+
+    ctrl = designer.Controls.Add("Forms.ComboBox.1", "cboPriority", True)
+    ctrl.Left = 270; ctrl.Top = y; ctrl.Width = 100; ctrl.Height = 20
+    ctrl.Style = 2
+
+    # ---- Row 3: Category and Assignee ----
+    y = 90
+
+    ctrl = designer.Controls.Add("Forms.Label.1", "lblCategory", True)
+    ctrl.Caption = "Category:"; ctrl.Left = 20; ctrl.Top = y; ctrl.Width = 55; ctrl.Height = 16
+
+    ctrl = designer.Controls.Add("Forms.ComboBox.1", "cboCategory", True)
+    ctrl.Left = 80; ctrl.Top = y; ctrl.Width = 130; ctrl.Height = 20
+    ctrl.Style = 2
+
+    ctrl = designer.Controls.Add("Forms.Label.1", "lblAssignee", True)
+    ctrl.Caption = "Assignee:"; ctrl.Left = 230; ctrl.Top = y; ctrl.Width = 55; ctrl.Height = 16
+
+    ctrl = designer.Controls.Add("Forms.ComboBox.1", "cboAssignee", True)
+    ctrl.Left = 290; ctrl.Top = y; ctrl.Width = 130; ctrl.Height = 20
+    ctrl.Style = 2
+
+    # ---- Row 4: Date From and Date To ----
+    y = 115
+
+    ctrl = designer.Controls.Add("Forms.Label.1", "lblDateFrom", True)
+    ctrl.Caption = "Date From:"; ctrl.Left = 20; ctrl.Top = y; ctrl.Width = 60; ctrl.Height = 16
+
+    ctrl = designer.Controls.Add("Forms.TextBox.1", "txtDateFrom", True)
+    ctrl.Left = 85; ctrl.Top = y; ctrl.Width = 100; ctrl.Height = 20
+
+    ctrl = designer.Controls.Add("Forms.Label.1", "lblDateTo", True)
+    ctrl.Caption = "Date To:"; ctrl.Left = 210; ctrl.Top = y; ctrl.Width = 50; ctrl.Height = 16
+
+    ctrl = designer.Controls.Add("Forms.TextBox.1", "txtDateTo", True)
+    ctrl.Left = 265; ctrl.Top = y; ctrl.Width = 100; ctrl.Height = 20
+
+    # ---- Search and Clear buttons ----
+    y = 145
+
+    ctrl = designer.Controls.Add("Forms.CommandButton.1", "btnSearch", True)
+    ctrl.Caption = "Search"; ctrl.Left = 20; ctrl.Top = y; ctrl.Width = 80; ctrl.Height = 26
+    ctrl.BackColor = 2372078  # CLR_BRIMIS_RED
+    ctrl.ForeColor = 16777215  # White
+    ctrl.BackStyle = 1  # fmBackStyleOpaque
+
+    ctrl = designer.Controls.Add("Forms.CommandButton.1", "btnClear", True)
+    ctrl.Caption = "Clear All"; ctrl.Left = 110; ctrl.Top = y; ctrl.Width = 80; ctrl.Height = 26
+
+    # ---- Result count label ----
+    y = 178
+
+    ctrl = designer.Controls.Add("Forms.Label.1", "lblResultCount", True)
+    ctrl.Caption = "Results:"; ctrl.Left = 20; ctrl.Top = y; ctrl.Width = 300; ctrl.Height = 16
+    ctrl.Font.Bold = True
+
+    # ---- Results ListBox ----
+    y = 196
+
+    ctrl = designer.Controls.Add("Forms.ListBox.1", "lstResults", True)
+    ctrl.Left = 20; ctrl.Top = y; ctrl.Width = 590; ctrl.Height = 150
+    ctrl.ColumnCount = 4
+    ctrl.ColumnWidths = "70;280;80;60"
+
+    # ---- Detail section ----
+    y = 355
+
+    ctrl = designer.Controls.Add("Forms.Label.1", "lblDetailHeader", True)
+    ctrl.Caption = "Selected Incident Details:"
+    ctrl.Left = 20; ctrl.Top = y; ctrl.Width = 200; ctrl.Height = 16
+    ctrl.Font.Bold = True
+
+    y = 373
+    for i, name in enumerate(["lblDetailID", "lblDetailCategory", "lblDetailReported",
+                                "lblDetailAssigned", "lblDetailDescription"]):
+        ctrl = designer.Controls.Add("Forms.Label.1", name, True)
+        ctrl.Caption = ""
+        ctrl.Left = 20; ctrl.Top = y + (i * 16); ctrl.Width = 590; ctrl.Height = 16
+        ctrl.Font.Size = 9
+
+    # ---- Action buttons at bottom ----
+    y = 460
+
+    ctrl = designer.Controls.Add("Forms.CommandButton.1", "btnViewDetails", True)
+    ctrl.Caption = "View Full Details"; ctrl.Left = 20; ctrl.Top = y; ctrl.Width = 120; ctrl.Height = 28
+    ctrl.Enabled = False
+
+    ctrl = designer.Controls.Add("Forms.CommandButton.1", "btnGenerateReport", True)
+    ctrl.Caption = "Generate Report"; ctrl.Left = 150; ctrl.Top = y; ctrl.Width = 120; ctrl.Height = 28
+    ctrl.BackColor = 2372078  # CLR_BRIMIS_RED
+    ctrl.ForeColor = 16777215  # White
+    ctrl.BackStyle = 1  # fmBackStyleOpaque
+    ctrl.Enabled = False
+
+    ctrl = designer.Controls.Add("Forms.CommandButton.1", "btnClose", True)
+    ctrl.Caption = "Close"; ctrl.Left = 530; ctrl.Top = y; ctrl.Width = 80; ctrl.Height = 28
+
+    # ---- Inject form code ----
+    print("  Injecting search form event handler code...")
+    code_path = os.path.join(VBA_MODULES_DIR, SEARCH_FORM_CODE_FILE)
+
+    if not os.path.exists(code_path):
+        print(f"  ERROR: Form code file not found: {code_path}")
+        return False
+
+    with open(code_path, 'r', encoding='utf-8') as f:
+        code_text = f.read()
+
+    # Strip any Attribute lines (form code should not have them, but guard)
+    code_lines = [line for line in code_text.split('\n')
+                  if not line.strip().startswith("Attribute ")]
+    clean_code = '\n'.join(code_lines)
+
+    code_module = form_comp.CodeModule
+    if code_module.CountOfLines > 0:
+        code_module.DeleteLines(1, code_module.CountOfLines)
+    code_module.AddFromString(clean_code)
+
+    print(f"  UserForm {form_name} created successfully with {designer.Controls.Count} controls and code")
+    return True
+
+
 def add_dashboard_buttons(wb):
     """Add action buttons on the Dashboard sheet.
 
     Creates BRIMIS-branded rounded rectangle shapes:
-    - 'Log New Incident' (Left=30) -> ShowIncidentEntryForm
-    - 'Assign Incident' (Left=210) -> ShowAssignmentForm
-    - 'Update Status' (Left=390) -> ShowStatusUpdateForm
-    - 'Refresh Dashboard' (Left=570) -> RefreshDashboard
+    - 'Log New Incident' (Left=20) -> ShowIncidentEntryForm
+    - 'Assign Incident' (Left=170) -> ShowAssignmentForm
+    - 'Update Status' (Left=320) -> ShowStatusUpdateForm
+    - 'Refresh Dashboard' (Left=470) -> RefreshDashboard
+    - 'Search Incidents' (Left=620) -> ShowSearchForm
     """
     dashboard = wb.Sheets("Dashboard")
 
-    # Define all 4 buttons (Phase 5: added Refresh Dashboard)
+    # Define all 5 buttons (Phase 6: added Search Incidents)
     buttons = [
-        {"name": "btnLogIncident",       "caption": "Log New Incident",   "left": 30,  "macro": "ShowIncidentEntryForm"},
-        {"name": "btnAssignIncident",    "caption": "Assign Incident",    "left": 210, "macro": "ShowAssignmentForm"},
-        {"name": "btnUpdateStatus",      "caption": "Update Status",      "left": 390, "macro": "ShowStatusUpdateForm"},
-        {"name": "btnRefreshDashboard",  "caption": "Refresh Dashboard",  "left": 570, "macro": "RefreshDashboard"},
+        {"name": "btnLogIncident",       "caption": "Log New Incident",   "left": 20,  "macro": "ShowIncidentEntryForm"},
+        {"name": "btnAssignIncident",    "caption": "Assign Incident",    "left": 170, "macro": "ShowAssignmentForm"},
+        {"name": "btnUpdateStatus",      "caption": "Update Status",      "left": 320, "macro": "ShowStatusUpdateForm"},
+        {"name": "btnRefreshDashboard",  "caption": "Refresh Dashboard",  "left": 470, "macro": "RefreshDashboard"},
+        {"name": "btnSearchIncidents",   "caption": "Search Incidents",   "left": 620, "macro": "ShowSearchForm"},
     ]
 
     for btn_def in buttons:
@@ -1130,8 +1320,8 @@ def add_dashboard_buttons(wb):
             pass
 
         # msoShapeRoundedRectangle = 5
-        # Top=48 (row 3 area, above KPI cards), Width=170, Height=40
-        shape = dashboard.Shapes.AddShape(5, btn_def["left"], 48, 170, 40)
+        # Top=48 (row 3 area, above KPI cards), Width=140, Height=40
+        shape = dashboard.Shapes.AddShape(5, btn_def["left"], 48, 140, 40)
         shape.Name = btn_def["name"]
 
         # BRIMIS Red fill
@@ -1313,6 +1503,15 @@ def main():
         except Exception as e:
             print(f"  ERROR creating status update form: {e}")
 
+        # Create the Search UserForm (Phase 6)
+        print()
+        print("Creating search UserForm...")
+        form_search_ok = False
+        try:
+            form_search_ok = create_search_form(wb.VBProject)
+        except Exception as e:
+            print(f"  ERROR creating search form: {e}")
+
         # Inject Dashboard sheet event code (Phase 5)
         print()
         print("Injecting Dashboard sheet event code...")
@@ -1373,6 +1572,7 @@ def main():
         print(f"  Incident entry form: {'Yes' if form_incident_ok else 'No'}")
         print(f"  Assignment form: {'Yes' if form_assignment_ok else 'No'}")
         print(f"  Status update form: {'Yes' if form_status_ok else 'No'}")
+        print(f"  Search form: {'Yes' if form_search_ok else 'No'}")
         print(f"  Dashboard sheet code: {'Yes' if dashboard_sheet_ok else 'No'}")
         print(f"  Dashboard buttons: {'Yes' if buttons_ok else 'No'}")
         print(f"  Tracker refresh button: {'Yes' if tracker_btn_ok else 'No'}")
@@ -1380,8 +1580,9 @@ def main():
                    (1 if form_incident_ok else 0) + \
                    (1 if form_assignment_ok else 0) + \
                    (1 if form_status_ok else 0) + \
+                   (1 if form_search_ok else 0) + \
                    (1 if dashboard_sheet_ok else 0)
-        total_expected = len(STANDARD_MODULES) + 5  # modules + ThisWorkbook + 3 UserForms + Dashboard sheet code
+        total_expected = len(STANDARD_MODULES) + 6  # modules + ThisWorkbook + 4 UserForms + Dashboard sheet code
         print(f"  Total VBA components: {total_ok}/{total_expected}")
         print(f"  Output file: {XLSM_PATH}")
 
@@ -1391,10 +1592,11 @@ def main():
 
         all_ok = (imported_count == len(STANDARD_MODULES) and thisworkbook_ok
                   and form_incident_ok and form_assignment_ok and form_status_ok
-                  and dashboard_sheet_ok and buttons_ok and tracker_btn_ok)
+                  and form_search_ok and dashboard_sheet_ok and buttons_ok
+                  and tracker_btn_ok)
         print()
         if all_ok:
-            print("SUCCESS: All VBA modules, UserForms, Dashboard sheet code, buttons, and tracker injected.")
+            print("SUCCESS: All 13 VBA modules, 4 UserForms, Dashboard sheet code, 5 buttons, and tracker injected.")
         else:
             print("WARNING: Some components may not have been created. Check output above.")
 
