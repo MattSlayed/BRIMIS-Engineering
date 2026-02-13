@@ -210,11 +210,17 @@ End Sub
 Public Sub ApplySLAConditionalFormatting()
     On Error GoTo ErrHandler
 
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Sheets(SHT_INCIDENT_LOG)
+
     Dim tbl As ListObject
-    Set tbl = ThisWorkbook.Sheets(SHT_INCIDENT_LOG).ListObjects(TBL_INCIDENTS)
+    Set tbl = ws.ListObjects(TBL_INCIDENTS)
 
     ' Guard: if table has no data rows, exit
     If tbl.DataBodyRange Is Nothing Then Exit Sub
+
+    ' Unprotect sheet (conditional formatting fails on protected sheets)
+    modUtilities.UnprotectSheet ws
 
     ' Get SLA column ranges
     Dim rngResponse As Range, rngResolution As Range
@@ -227,9 +233,16 @@ Public Sub ApplySLAConditionalFormatting()
     ' Apply formatting to Resolution SLA column
     ApplySLARulesToRange rngResolution
 
+    ' Re-protect sheet
+    modUtilities.ProtectSheet ws
+
     Exit Sub
 
 ErrHandler:
+    ' Re-protect on error
+    On Error Resume Next
+    modUtilities.ProtectSheet ws
+    On Error GoTo 0
     modErrorHandler.HandleError "modFormatting", "ApplySLAConditionalFormatting", _
                                  Err.Number, Err.Description
 End Sub
