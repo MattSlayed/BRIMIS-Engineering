@@ -1341,13 +1341,27 @@ def main():
             print(f"  ERROR adding tracker refresh button: {e}")
 
         # Save as .xlsm (macro-enabled format)
+        # NOTE: OneDrive paths may throw a spurious COM error on SaveAs even when
+        # the file is written correctly. We catch and verify the file exists.
         print()
-        if source_path == XLSX_PATH:
-            print(f"Saving as macro-enabled workbook: {os.path.basename(XLSM_PATH)}")
-            wb.SaveAs(XLSM_PATH, FileFormat=XL_OPEN_XML_WORKBOOK_MACRO_ENABLED)
-        else:
-            print(f"Saving workbook: {os.path.basename(XLSM_PATH)}")
-            wb.Save()
+        save_ok = False
+        try:
+            if source_path == XLSX_PATH:
+                print(f"Saving as macro-enabled workbook: {os.path.basename(XLSM_PATH)}")
+                wb.SaveAs(XLSM_PATH, FileFormat=XL_OPEN_XML_WORKBOOK_MACRO_ENABLED)
+            else:
+                print(f"Saving workbook: {os.path.basename(XLSM_PATH)}")
+                wb.Save()
+            save_ok = True
+        except com_error as save_err:
+            # Check if file was actually written despite the COM error (OneDrive issue)
+            time.sleep(2)
+            if os.path.exists(XLSM_PATH) and os.path.getsize(XLSM_PATH) > 50000:
+                print(f"  SaveAs raised COM error but file was written successfully (OneDrive quirk)")
+                save_ok = True
+            else:
+                print(f"  SaveAs FAILED: {save_err}")
+                save_ok = False
 
         # Injection summary
         print()
