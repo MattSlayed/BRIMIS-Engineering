@@ -66,12 +66,12 @@ Artisans and technicians can log, track, and resolve industrial incidents throug
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Excel hybrid (sheets + VBA forms) | Artisans need simple forms; supervisors need structured data views | — Pending |
-| Visual indicators only, no email | Keeps system self-contained, no Outlook dependency | — Pending |
-| 3 categories with subcategories | Covers Mechanical, Electrical, Safety/HSE — subcategories handle specifics | — Pending |
-| Simple RCA (not 5-Why template) | Proportional to incident volume; detailed RCA would be overkill for <50/month | — Pending |
-| Team + individual assignment | Reflects real workflow: dispatcher assigns to team lead who assigns to technician | — Pending |
-| Separate user manual (Word/PDF) | Artisans need printed/offline reference; Excel Help sheet too limited | — Pending |
+| Excel hybrid (sheets + VBA forms) | Artisans need simple forms; supervisors need structured data views | — Complete |
+| Visual indicators only, no email | Keeps system self-contained, no Outlook dependency | — Complete |
+| 3 categories with subcategories | Covers Mechanical, Electrical, Safety/HSE — subcategories handle specifics | — Complete |
+| Simple RCA (not 5-Why template) | Proportional to incident volume; detailed RCA would be overkill for <50/month | — Complete |
+| Team + individual assignment | Reflects real workflow: dispatcher assigns to team lead who assigns to technician | — Complete |
+| Separate user manual (Word/PDF) | Artisans need printed/offline reference; Excel Help sheet too limited | — Complete |
 
 ---
 *Last updated: 2026-02-12 after initialization*
