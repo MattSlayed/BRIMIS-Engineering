@@ -1,3 +1,4 @@
 .planning/
-.claude/
+.claude/*
+!.claude/skills/
 Backups/
